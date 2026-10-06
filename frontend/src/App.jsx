@@ -1,122 +1,66 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState } from 'react';
+import MusicExplorer from './pages/MusicExplorer';
+import MusicDashboard from './pages/MusicDashboard';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [activeTab, setActiveTab] = useState('explorer');
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div style={{ minHeight: '100vh', backgroundColor: '#EFEFEA', margin: 0, padding: 0 }}>
+      {/* SWISS EDITORIAL TOP NAVIGATION BAR */}
+      <div style={{
+        backgroundColor: '#000000',
+        padding: '15px 40px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif'
+      }}>
+        <div style={{ color: '#FFF', fontSize: '11px', fontWeight: 'bold', letterSpacing: '2px' }}>
+          SPOTIFY SYSTEM VIEWS //
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+        
+        <div style={{ display: 'flex', gap: '20px' }}>
+          <button 
+            onClick={() => setActiveTab('explorer')}
+            style={{
+              backgroundColor: activeTab === 'explorer' ? '#D9383A' : '#FFF',
+              color: activeTab === 'explorer' ? '#FFF' : '#000',
+              border: '1px solid #000',
+              padding: '6px 16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              fontSize: '11px',
+              letterSpacing: '1px'
+            }}
+          >
+            01 // MUSIC EXPLORER
+          </button>
+          
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            style={{
+              backgroundColor: activeTab === 'dashboard' ? '#D9383A' : '#FFF',
+              color: activeTab === 'dashboard' ? '#FFF' : '#000',
+              border: '1px solid #000',
+              padding: '6px 16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              fontSize: '11px',
+              letterSpacing: '1px'
+            }}
+          >
+            02 // ANALYTICS DASHBOARD
+          </button>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </div>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* COMPONENT VIEWPORT SWITCH */}
+      <main style={{ width: '100%' }}>
+        {activeTab === 'explorer' ? <MusicExplorer /> : <MusicDashboard />}
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;

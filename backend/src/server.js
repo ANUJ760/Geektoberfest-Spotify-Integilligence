@@ -41,8 +41,10 @@ async function startServer() {
     await db.query('SELECT NOW()');
     console.log('Database startup ping successful.');
 
-    app.listen(PORT, () => {
-      console.log(` API Server dynamically running on: http://localhost:${PORT}`);
+     const PORT = process.env.PORT || 5000;
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Production server successfully active on port ${PORT}`);
     });
   } catch (err) {
     console.error('Failed to connect to PostgreSQL on startup:', err.message);

@@ -17,4 +17,5 @@ router.get('/genres', analyticsController.getGenreList);
 // Fetches computed metrics for a singular targeted genre
 router.get('/analytics/genres/:genreName', analyticsController.getGenreMetrics);
 
+router.get('/analytics/dashboard',analyticsController.getGlobalDashboardMetrics);
 module.exports = router;
