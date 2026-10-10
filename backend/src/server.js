@@ -45,6 +45,7 @@ app.use((err, req, res, next) => {
 
 async function startServer() {
   try {
+    await db.initializeSchema();
     // Run a lightweight test query to ensure PostgreSQL is responding
     await db.query('SELECT NOW()');
     console.log('Database startup ping successful.');

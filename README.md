@@ -8,11 +8,8 @@ Issues and feature ideas are grouped by estimated effort. Difficulty is only a g
 
 ### Easy
 
-- **Fix dashboard analytics response keys (bug):** The dashboard reads `tempoDistribution` and `scatterSample`, but `/api/analytics/dashboard` currently returns `tempoDisribution` and `scattersample`. Align the API response with the frontend (or update both consistently) so the tempo and scatter charts display data.
 - **Validate track pagination and filters (bug):** `/api/tracks` accepts invalid, negative, or excessively large `page` and `limit` values, and parses `explicit` without checking that it is `0` or `1`. Validate query parameters, return a clear `400` response for invalid values, and set a documented maximum page size.
-- **Unify database setup defaults (bug):** The Node database config defaults to the misspelled user `posgres`, while the Python pipeline defaults to `postgres`. Use consistent configuration and document the required environment variables so both services connect to the same database.
 - **Improve empty and failure states:** Show a useful retry action when genre loading fails in the Explorer, and distinguish an empty search result from an API/database error.
-- **Fix data pipeline cleanup:** `clean_data.py` renames `tracks_genre`, but the aggregated column is named `track_genre`. Correct the rename or remove it, and remove duplicate success logging.
 
 ### Medium
 
@@ -43,12 +40,12 @@ Data_processing/  CSV cleaning and database import pipeline
 
 ## Getting started
 
-The backend expects PostgreSQL and reads `DATABASE_URL` or `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_NAME` from environment variables. Set `VITE_API_URL` in the frontend if the API is not running at `http://localhost:5000/api`.
+The backend expects PostgreSQL and reads `DATABASE_URL` (or the individual `DB_*` variables for local development). On its first start, it creates the `tracks` and `genre_analytics` tables if they do not exist. This creates an empty schema; load rows from the provided CSV using the data import instructions below. If the frontend and backend are hosted separately, set the frontend's `VITE_API_URL` to the backend URL ending in `/api`, for example `https://your-service.onrender.com/api`.
 
 - Backend: `cd backend && npm install && npm start`
 - Frontend: `cd frontend && npm install && npm run dev`
-- Data import dependencies: `pip install -r Data_processing/requirements.txt`, then run `python Data_processing/clean_data.py` from the repository root after configuring the database.
+- Import the provided CSV into PostgreSQL: install dependencies with `pip install -r Data_processing/requirements.txt`, set `DATABASE_URL` to a database URL reachable from the machine running the import, then run `python Data_processing/clean_data.py` from the repository root. The script creates/replaces the `tracks` and `genre_analytics` tables from `Data/raw/spotify_tracks.csv`; no extra data file is needed.
 
 ### Deploy the backend on Render
 
-Create a Render **Web Service** from this repository with the root directory set to `backend`, build command `npm install`, and start command `npm start`. Set `DATABASE_URL` to the PostgreSQL database's **internal** connection URL when the web service and database are in the same Render region. Set the Render health check path to `/health`. Keep database credentials in Render environment variables; do not commit them. The backend also accepts the individual `DB_*` variables for local development. The API is available under `/api` and the root path returns a service status response.
+Create a Render **Web Service** from this repository with the root directory set to `backend`, build command `npm install`, and start command `npm start`. Set `DATABASE_URL` to the PostgreSQL database's **internal** connection URL when the web service and database are in the same Render region. Set the Render health check path to `/health`. Keep database credentials in Render environment variables; do not commit them. The API is available under `/api` and the root path returns a service status response. If the frontend is on Vercel, set `VITE_API_URL` in its project environment variables to the Render URL ending in `/api`, then redeploy the frontend. To import the CSV from outside Render, run the data script with the database's **external** URL; the internal URL is only reachable from services on Render's private network.

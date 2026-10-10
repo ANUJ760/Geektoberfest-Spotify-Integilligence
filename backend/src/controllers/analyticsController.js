@@ -93,9 +93,9 @@ const tempoQuery = `
     res.status(200).json({
       status:'success',
       data:{
-        tempoDisribution: tempoResult.rows,
-        topGenres: genreResult.rows,
-        scattersample: scatterResult.rows
+      tempoDistribution: tempoResult.rows,
+      topGenres: genreResult.rows,
+      scatterSample: scatterResult.rows
       }
     });                               
   }catch(error){

@@ -545,7 +545,8 @@ export default function MusicDashboard() {
         return;
       }
 
-      const metrics = unwrap(metricsResult.value) ?? {};
+      const responseBody = unwrap(metricsResult.value) ?? {};
+      const metrics = responseBody.data ?? responseBody;
       const top = normalizeTopGenres(metrics.topGenres);
 
       /* Genre list from the API (strings or objects). Falls back to topGenres. */

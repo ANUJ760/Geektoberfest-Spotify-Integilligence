@@ -1,28 +1,32 @@
 import pandas as pd
-import numpy as np
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 import os
+from pathlib import Path
+from urllib.parse import quote_plus
 
-load_dotenv(dotenv_path="../backend/.env")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=REPO_ROOT / "backend" / ".env")
 
 
 # 1. Database Connection Configuration
-# Modify these variables to match your local PostgreSQL setup
-DB_USER = os.getenv("DB_USER","postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD","devmanshu")
-DB_HOST = os.getenv("DB_HOST","localhost")
-DB_PORT = os.getenv("DB_PORT","5432")
-DB_NAME = os.getenv("DB_NAME","spotify_intelligence")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    # Keep compatibility with the individual DB_* settings used locally.
+    DB_USER = quote_plus(os.getenv("DB_USER", "postgres"))
+    DB_PASSWORD = quote_plus(os.getenv("DB_PASSWORD", ""))
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_NAME = quote_plus(os.getenv("DB_NAME", "spotify_intelligence"))
+    credentials = f"{DB_USER}:{DB_PASSWORD}" if DB_PASSWORD else DB_USER
+    DATABASE_URL = f"postgresql://{credentials}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 engine = create_engine(DATABASE_URL)
 
 def run_pipeline():
-    base_dir=os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(base_dir, "..", "Data", "raw", "spotify_tracks.csv")
+    csv_path = REPO_ROOT / "Data" / "raw" / "spotify_tracks.csv"
 
-    if not os.path.exists(csv_path):
+    if not csv_path.exists():
         print(f"Error:Raw dataset not found at {csv_path}.")
         return
 
@@ -70,8 +74,6 @@ def run_pipeline():
         track_count=('track_id', 'count')
     ).reset_index()
 
-    genre_metrics=genre_metrics.rename(columns={'tracks_genre': 'genre'})
-
     print(" Stage 5: Ingesting pre-computed aggregation arrays into 'genre_analytics'...")
     genre_metrics.to_sql('genre_analytics', engine, if_exists='replace', index=False)
     print(" Data processing pipelines completed successfully!")
@@ -81,4 +83,3 @@ if __name__ == "__main__":
 
 
     
-
