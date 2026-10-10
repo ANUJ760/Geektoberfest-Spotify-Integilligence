@@ -2,14 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const apiRoutes = require('./routes/api');
-const db=require('./config/db');
+const db = require('./config/db');
 
 // Initialize environment configurations
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-
 // Middleware configuration
 app.use(cors());
 app.use(express.json()); // Parses incoming JSON payloads
@@ -21,6 +19,16 @@ app.get('/', (req, res) => {
     message: "Welcome to the Spotify Music Intelligence API",
     timestamp: new Date()
   });
+});
+
+// Use this endpoint as Render's health check path.
+app.get('/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.status(200).json({ status: 'healthy' });
+  } catch (error) {
+    res.status(503).json({ status: 'unhealthy' });
+  }
 });
 
 // Mount modular API routes
@@ -56,6 +64,15 @@ async function startServer() {
 // local HTTP listener for direct development/production server execution only.
 if (require.main === module) {
   startServer();
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, async () => {
+      try {
+        await db.pool.end();
+      } finally {
+        process.exit(0);
+      }
+    });
+  }
 }
 
 module.exports = app;

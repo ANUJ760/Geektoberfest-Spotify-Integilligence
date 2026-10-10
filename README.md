@@ -43,8 +43,12 @@ Data_processing/  CSV cleaning and database import pipeline
 
 ## Getting started
 
-The backend expects PostgreSQL and reads `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_NAME` from environment variables. Set `VITE_API_URL` in the frontend if the API is not running at `http://localhost:5000/api`.
+The backend expects PostgreSQL and reads `DATABASE_URL` or `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_NAME` from environment variables. Set `VITE_API_URL` in the frontend if the API is not running at `http://localhost:5000/api`.
 
 - Backend: `cd backend && npm install && npm start`
 - Frontend: `cd frontend && npm install && npm run dev`
 - Data import dependencies: `pip install -r Data_processing/requirements.txt`, then run `python Data_processing/clean_data.py` from the repository root after configuring the database.
+
+### Deploy the backend on Render
+
+Create a Render **Web Service** from this repository with the root directory set to `backend`, build command `npm install`, and start command `npm start`. Set `DATABASE_URL` to the PostgreSQL database's **internal** connection URL when the web service and database are in the same Render region. Set the Render health check path to `/health`. Keep database credentials in Render environment variables; do not commit them. The backend also accepts the individual `DB_*` variables for local development. The API is available under `/api` and the root path returns a service status response.
