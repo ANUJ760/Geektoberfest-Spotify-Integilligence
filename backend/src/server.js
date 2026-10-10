@@ -41,10 +41,10 @@ async function startServer() {
     await db.query('SELECT NOW()');
     console.log('Database startup ping successful.');
 
-     const PORT = process.env.PORT || 5000;
+    const port = process.env.PORT || 5000;
 
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Production server successfully active on port ${PORT}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Server listening on port ${port}`);
     });
   } catch (err) {
     console.error('Failed to connect to PostgreSQL on startup:', err.message);
@@ -52,5 +52,10 @@ async function startServer() {
   }
 }
 
-startServer();
+// Vercel imports the Express app as a function. Keep the database ping and
+// local HTTP listener for direct development/production server execution only.
+if (require.main === module) {
+  startServer();
+}
 
+module.exports = app;
