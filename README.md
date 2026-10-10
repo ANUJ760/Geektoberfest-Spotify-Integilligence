@@ -44,7 +44,7 @@ The backend expects PostgreSQL and reads `DATABASE_URL` (or the individual `DB_*
 
 - Backend: `cd backend && npm install && npm start`
 - Frontend: `cd frontend && npm install && npm run dev`
-- Import the provided CSV into PostgreSQL: install dependencies with `pip install -r Data_processing/requirements.txt`, set `DATABASE_URL` to a database URL reachable from the machine running the import, then run `python Data_processing/clean_data.py` from the repository root. The script creates/replaces the `tracks` and `genre_analytics` tables from `Data/raw/spotify_tracks.csv`; no extra data file is needed.
+- Import the provided CSV into PostgreSQL: install dependencies with `pip install -r Data_processing/requirements.txt`, set `DATABASE_URL` to a database URL reachable from the machine running the import, then run `python Data_processing/clean_data.py` from the repository root. The script creates the tables if needed and atomically replaces their rows from `Data/raw/spotify_tracks.csv` while preserving the schema; no extra data file is needed.
 
 ### Deploy the backend on Render
 
