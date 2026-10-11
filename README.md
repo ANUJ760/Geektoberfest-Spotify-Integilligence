@@ -94,6 +94,20 @@ These endpoints should return JSON. The tracks response should include rows; the
 
 If the health check works but tracks are empty, run the CSV importer and confirm its printed database name/host match the backend's database. If the frontend reports a request error, confirm the backend is running on port 5000 or set `VITE_API_URL` to the actual API base URL.
 
+### Running backend tests
+
+Contributors can run the backend API test suite with one command from the repository root:
+
+```bash
+npm --prefix backend test
+```
+
+Or run `npm test` directly from inside the `backend/` directory:
+
+```bash
+cd backend && npm test
+```
+
 ## Production deployment
 
 ### Render backend and PostgreSQL
