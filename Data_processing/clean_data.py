@@ -149,6 +149,15 @@ def build_genre_analytics(tracks):
 def run_pipeline():
     tracks = prepare_tracks()
     genre_metrics = build_genre_analytics(tracks)
+    target = make_url(DATABASE_URL)
+    print(
+        f"Prepared {len(tracks):,} unique tracks and {len(genre_metrics):,} "
+        f"genres from {CSV_PATH.name}."
+    )
+    print(
+        "Connecting to PostgreSQL database "
+        f"'{target.database}' on '{target.host}:{target.port or 5432}'."
+    )
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"connect_timeout": 15})
 
     try:
@@ -172,11 +181,11 @@ def run_pipeline():
         print(f"Loaded {len(tracks):,} tracks and {len(genre_metrics):,} genres.")
         print("CSV import completed successfully.")
     except Exception as error:
-        # SQLAlchemy exceptions can include the connection URL (and password).
-        # Report the failure class without printing credentials.
+        # The DBAPI error provides actionable details without printing the URL.
+        details = str(getattr(error, "orig", error))
         raise RuntimeError(
-            f"Database import failed ({type(error).__name__}). Check that the "
-            "database is reachable and DATABASE_URL/DB_* settings are correct."
+            f"Database import failed ({type(error).__name__}): {details}. "
+            "Check that the database target above is the one used by the backend."
         ) from None
     finally:
         engine.dispose()
