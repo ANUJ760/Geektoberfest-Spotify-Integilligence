@@ -110,6 +110,7 @@ const normalizeTrack = (raw, index) => {
     artist: formatArtists(raw.artists ?? raw.artist_name ?? raw.artist),
     genre: raw.track_genre ?? raw.genre ?? 'Unclassified',
     durationMs: raw.duration_ms,
+    explicit: Boolean(raw.explicit === 1 || raw.explicit === true || raw.explicit === '1'),
   };
 };
 
@@ -547,6 +548,7 @@ export default function MusicExplorer() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [genre, setGenre] = useState('');
+  const [explicit, setExplicit] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -579,12 +581,16 @@ export default function MusicExplorer() {
 
     const timer = setTimeout(async () => {
       try {
-        const res = await trackService.getTracks({
+        const params = {
           page,
           limit: PAGE_SIZE,
           search: search.trim(),
           genre,
-        });
+        };
+        if (explicit !== '') {
+          params.explicit = explicit;
+        }
+        const res = await trackService.getTracks(params);
         if (cancelled) return;
 
         const parsed = parseTracksResponse(res);
@@ -592,7 +598,7 @@ export default function MusicExplorer() {
         setTotal(parsed.total);
         setTotalPages(parsed.totalPages);
       } catch (err) {
-        if (cancelled) return;
+        if (!cancelled) return;
         setTracks([]);
         setTotal(null);
         setTotalPages(null);
@@ -606,7 +612,7 @@ export default function MusicExplorer() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [page, search, genre, reloadKey]);
+  }, [page, search, genre, explicit, reloadKey]);
 
   const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
   const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
@@ -624,6 +630,11 @@ export default function MusicExplorer() {
 
   const handleGenre = (value) => {
     setGenre(value);
+    setPage(1);
+  };
+
+  const handleExplicit = (value) => {
+    setExplicit(value);
     setPage(1);
   };
 
@@ -686,32 +697,78 @@ export default function MusicExplorer() {
                 ))}
               </select>
             </div>
+
+            <div style={S.field}>
+              <label htmlFor="mx-explicit" style={label}>Content</label>
+              <select
+                id="mx-explicit"
+                className="mx-focus"
+                value={explicit}
+                onChange={(e) => handleExplicit(e.target.value)}
+                style={{ ...S.select, width: 140 }}
+              >
+                <option value="">All</option>
+                <option value="1">Explicit</option>
+                <option value="0">Clean</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {genres.length > 0 && (
-          <div style={S.chips} className="mx-hide-sm">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} className="mx-hide-sm">
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.soft }}>Content:</span>
             <button
               type="button"
               className="mx-chip mx-focus"
-              style={chipStyle(genre === '')}
-              onClick={() => handleGenre('')}
+              style={chipStyle(explicit === '')}
+              onClick={() => handleExplicit('')}
             >
               All
             </button>
-            {genres.slice(0, QUICK_GENRES).map((g) => (
+            <button
+              type="button"
+              className="mx-chip mx-focus"
+              style={chipStyle(explicit === '1')}
+              onClick={() => handleExplicit('1')}
+            >
+              Explicit
+            </button>
+            <button
+              type="button"
+              className="mx-chip mx-focus"
+              style={chipStyle(explicit === '0')}
+              onClick={() => handleExplicit('0')}
+            >
+              Clean
+            </button>
+          </div>
+
+          {genres.length > 0 && (
+            <div style={S.chips} className="mx-hide-sm">
+              <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.soft, marginRight: 4 }}>Genres:</span>
               <button
-                key={g}
                 type="button"
                 className="mx-chip mx-focus"
-                style={chipStyle(genre === g)}
-                onClick={() => handleGenre(genre === g ? '' : g)}
+                style={chipStyle(genre === '')}
+                onClick={() => handleGenre('')}
               >
-                {truncate(g, 20)}
+                All
               </button>
-            ))}
-          </div>
-        )}
+              {genres.slice(0, QUICK_GENRES).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className="mx-chip mx-focus"
+                  style={chipStyle(genre === g)}
+                  onClick={() => handleGenre(genre === g ? '' : g)}
+                >
+                  {truncate(g, 20)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main */}
@@ -736,6 +793,11 @@ export default function MusicExplorer() {
                   <span style={S.badgeLine} title={activeTrack.genre}>
                     {truncate(activeTrack.genre, 30)}
                   </span>
+                  {activeTrack.explicit && (
+                    <span style={{ ...S.badgeLine, background: C.ink, color: C.card, fontWeight: 800 }}>
+                      Explicit
+                    </span>
+                  )}
                 </div>
 
                 <div>
@@ -851,6 +913,24 @@ export default function MusicExplorer() {
                           title={track.title}
                         >
                           {truncate(track.title)}
+                          {track.explicit && (
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                marginLeft: 6,
+                                padding: '1px 5px',
+                                fontSize: 10,
+                                fontWeight: 800,
+                                background: active ? C.card : C.ink,
+                                color: active ? C.ink : C.card,
+                                borderRadius: 2,
+                                verticalAlign: 'middle',
+                              }}
+                              title="Explicit track"
+                            >
+                              E
+                            </span>
+                          )}
                         </span>
                         <span
                           style={{
