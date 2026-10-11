@@ -89,6 +89,8 @@ const schemaStatements = [
   )`,
   'CREATE INDEX IF NOT EXISTS tracks_popularity_idx ON tracks (popularity DESC)',
   'CREATE INDEX IF NOT EXISTS tracks_genre_idx ON tracks (track_genre)',
+  'CREATE INDEX IF NOT EXISTS tracks_tempo_idx ON tracks (tempo)',
+  'CREATE INDEX IF NOT EXISTS genre_analytics_avg_pop_idx ON genre_analytics (avg_popularity DESC)',
 ];
 
 async function initializeSchema() {
