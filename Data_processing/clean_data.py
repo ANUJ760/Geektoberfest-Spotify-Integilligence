@@ -7,18 +7,48 @@ from urllib.parse import quote_plus
 import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = REPO_ROOT / "Data" / "raw" / "spotify_tracks.csv"
+# Deployment platforms inject DATABASE_URL directly. For local runs, allow a
+# repo-root .env and the backend's existing .env file (without overriding an
+# already-exported environment variable).
+load_dotenv(REPO_ROOT / ".env")
 load_dotenv(REPO_ROOT / "backend" / ".env")
 
 
 def get_database_url():
-    """Read DATABASE_URL or assemble one from the legacy DB_* settings."""
+    """Read the deployment URL or assemble a local URL from DB_* settings."""
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        return database_url
+        # Normalize Render's legacy scheme and require TLS for external Render
+        # database URLs. Internal Render URLs and user-specified sslmode are kept.
+        if database_url.startswith("postgres://"):
+            database_url = "postgresql://" + database_url[len("postgres://"):]
+        try:
+            url = make_url(database_url)
+        except Exception as error:
+            raise ValueError("DATABASE_URL is not a valid PostgreSQL URL") from error
+        if url.get_backend_name() != "postgresql":
+            raise ValueError("DATABASE_URL must use the postgresql:// scheme")
+        if (
+            url.host
+            and "render.com" in url.host
+            and ".internal" not in url.host
+            and "sslmode" not in url.query
+        ):
+            url = url.update_query_dict({"sslmode": "require"})
+        return url.render_as_string(hide_password=False)
+
+    # Don't silently connect to localhost on a deployed job when its database
+    # configuration was omitted.
+    if not os.getenv("DB_HOST"):
+        raise RuntimeError(
+            "Database is not configured. Set DATABASE_URL, or set DB_HOST and "
+            "the related DB_* variables for a local PostgreSQL database."
+        )
 
     user = quote_plus(os.getenv("DB_USER", "postgres"))
     password = quote_plus(os.getenv("DB_PASSWORD", ""))
@@ -27,6 +57,11 @@ def get_database_url():
     database = quote_plus(os.getenv("DB_NAME", "spotify_intelligence"))
     credentials = f"{user}:{password}" if password else user
     return f"postgresql://{credentials}@{host}:{port}/{database}"
+
+
+# Render should provide DATABASE_URL in the service environment. Locally, this
+# resolves from DATABASE_URL in .env or falls back to the DB_* settings above.
+DATABASE_URL = get_database_url()
 
 
 CREATE_TABLES = (
@@ -114,7 +149,7 @@ def build_genre_analytics(tracks):
 def run_pipeline():
     tracks = prepare_tracks()
     genre_metrics = build_genre_analytics(tracks)
-    engine = create_engine(get_database_url(), pool_pre_ping=True)
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"connect_timeout": 15})
 
     try:
         # Keep both tables in sync: a failed import rolls the whole transaction
@@ -136,6 +171,13 @@ def run_pipeline():
 
         print(f"Loaded {len(tracks):,} tracks and {len(genre_metrics):,} genres.")
         print("CSV import completed successfully.")
+    except Exception as error:
+        # SQLAlchemy exceptions can include the connection URL (and password).
+        # Report the failure class without printing credentials.
+        raise RuntimeError(
+            f"Database import failed ({type(error).__name__}). Check that the "
+            "database is reachable and DATABASE_URL/DB_* settings are correct."
+        ) from None
     finally:
         engine.dispose()
 
