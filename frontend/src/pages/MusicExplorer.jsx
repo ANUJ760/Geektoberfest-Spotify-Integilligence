@@ -553,6 +553,11 @@ export default function MusicExplorer() {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeId, setActiveId] = useState(null);
 
+  const [details, setDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
+  const [detailsRetryKey, setDetailsRetryKey] = useState(0);
+
   /* Genres: load once on mount */
   useEffect(() => {
     let cancelled = false;
@@ -612,6 +617,45 @@ export default function MusicExplorer() {
   const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
   const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
   const activeNumber = (page - 1) * PAGE_SIZE + activeIndex + 1;
+
+  /* Fetch detailed metadata, album, popularity and audio features for the selected track */
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeTrack?.id) {
+      setDetails(null);
+      setDetailsError(null);
+      return;
+    }
+
+    setDetails(null);
+    setDetailsLoading(true);
+    setDetailsError(null);
+
+    (async () => {
+      try {
+        const res = await trackService.getTrackById(activeTrack.id);
+        if (!cancelled) {
+          setDetails(res?.data ?? res);
+          setDetailsLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDetails(null);
+          const is404 = err?.response?.status === 404;
+          setDetailsError(
+            is404
+              ? 'This track was not found or no longer exists in the database.'
+              : err?.message || 'Failed to load track details'
+          );
+          setDetailsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTrack?.id, detailsRetryKey]);
 
   const hasPrev = page > 1;
   const hasNext = totalPages != null ? page < totalPages : tracks.length === PAGE_SIZE;
@@ -753,7 +797,9 @@ export default function MusicExplorer() {
             {activeTrack ? (
               <>
                 <div style={S.badgeRow}>
-                  <span style={S.badgeRed}>Now spinning</span>
+                  <span style={detailsError ? { ...S.badgeRed, background: C.soft } : S.badgeRed}>
+                    {detailsError ? 'Unavailable' : 'Now spinning'}
+                  </span>
                   <span style={S.badgeLine} title={activeTrack.genre}>
                     {truncate(activeTrack.genre, 30)}
                   </span>
@@ -766,33 +812,105 @@ export default function MusicExplorer() {
                   <p style={S.songTitle} title={activeTrack.title}>
                     {truncate(activeTrack.title, 120)}
                   </p>
+                  {detailsLoading && !details ? (
+                    <p style={{ margin: '8px 0 0', fontSize: 13, color: C.soft, fontStyle: 'italic' }}>
+                      Loading track details...
+                    </p>
+                  ) : details ? (
+                    <p style={{ margin: '8px 0 0', fontSize: 14, color: C.soft, fontWeight: 700 }} title={details.album_name || 'Single / Unknown Album'}>
+                      Album: <span style={{ color: C.ink, fontWeight: 800 }}>{truncate(details.album_name || 'Single / Unknown Album', 60)}</span>
+                    </p>
+                  ) : null}
                 </div>
 
-                <div style={S.wave} aria-hidden="true">
-                  {waveform(activeTrack.id).map((h, i) => (
-                    <div
-                      key={i}
-                      style={{ flex: 1, height: `${h}%`, background: C.ink }}
-                    />
-                  ))}
-                </div>
+                {detailsError ? (
+                  <div style={{ padding: '14px 18px', background: 'rgba(217, 56, 58, 0.08)', border: `2px solid ${C.red}`, marginTop: 8 }} role="alert">
+                    <span style={{ fontSize: 13, fontWeight: 800, color: C.red, display: 'block' }}>
+                      Track Details Unavailable
+                    </span>
+                    <span style={{ fontSize: 12, color: C.ink, display: 'block', marginTop: 4 }}>
+                      {detailsError}
+                    </span>
+                    {detailsError !== 'This track was not found or no longer exists in the database.' && (
+                      <button
+                        type="button"
+                        className="mx-btn mx-focus"
+                        style={{ ...S.button, marginTop: 10, padding: '4px 12px', fontSize: 11 }}
+                        onClick={() => setDetailsRetryKey((k) => k + 1)}
+                      >
+                        Retry Details
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div style={S.wave} aria-hidden="true">
+                      {waveform(activeTrack.id).map((h, i) => (
+                        <div
+                          key={i}
+                          style={{ flex: 1, height: `${h}%`, background: C.ink }}
+                        />
+                      ))}
+                    </div>
 
-                <dl style={S.meta}>
-                  <div style={S.metaCell}>
-                    <dt style={S.metaTerm}>Genre</dt>
-                    <dd style={S.metaGenre} title={activeTrack.genre}>
-                      {truncate(activeTrack.genre, 40)}
-                    </dd>
-                  </div>
-                  <div style={S.metaCell}>
-                    <dt style={S.metaTerm}>Duration</dt>
-                    <dd style={S.metaMono}>{formatDuration(activeTrack.durationMs)}</dd>
-                  </div>
-                  <div style={S.metaCell}>
-                    <dt style={S.metaTerm}>Result</dt>
-                    <dd style={{ ...S.metaMono, color: C.red }}>#{pad2(activeNumber)}</dd>
-                  </div>
-                </dl>
+                    <dl style={{ ...S.meta, gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+                      <div style={S.metaCell}>
+                        <dt style={S.metaTerm}>Genre</dt>
+                        <dd style={S.metaGenre} title={activeTrack.genre}>
+                          {truncate(activeTrack.genre, 40)}
+                        </dd>
+                      </div>
+                      <div style={S.metaCell}>
+                        <dt style={S.metaTerm}>Duration</dt>
+                        <dd style={S.metaMono}>{formatDuration(details?.duration_ms ?? activeTrack.durationMs)}</dd>
+                      </div>
+                      <div style={S.metaCell}>
+                        <dt style={S.metaTerm}>Popularity</dt>
+                        <dd style={{ ...S.metaMono, color: C.ink }}>
+                          {details?.popularity != null ? `${details.popularity}%` : (detailsLoading ? '...' : '--')}
+                        </dd>
+                      </div>
+                      <div style={S.metaCell}>
+                        <dt style={S.metaTerm}>Result</dt>
+                        <dd style={{ ...S.metaMono, color: C.red }}>#{pad2(activeNumber)}</dd>
+                      </div>
+                    </dl>
+
+                    {details && (
+                      <div style={{ borderTop: `1px solid ${C.ink}`, paddingTop: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.soft, display: 'block', marginBottom: 8 }}>
+                          Audio Features {detailsLoading ? '• Loading...' : ''}
+                        </span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: 6 }}>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Danceability</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.danceability != null ? `${Math.round(details.danceability * 100)}%` : '--'}</div>
+                          </div>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Energy</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.energy != null ? `${Math.round(details.energy * 100)}%` : '--'}</div>
+                          </div>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Valence</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.valence != null ? `${Math.round(details.valence * 100)}%` : '--'}</div>
+                          </div>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Acousticness</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.acousticness != null ? `${Math.round(details.acousticness * 100)}%` : '--'}</div>
+                          </div>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Instrumental</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.instrumentalness != null ? `${Math.round(details.instrumentalness * 100)}%` : '--'}</div>
+                          </div>
+                          <div style={{ padding: '4px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                            <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', color: C.soft }}>Tempo</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, fontFamily: MONO, marginTop: 2 }}>{details.tempo != null ? `${Math.round(details.tempo)} BPM` : '--'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             ) : (
               <div style={{ margin: 'auto 0', fontSize: 20, fontWeight: 700, lineHeight: 1.3 }}>
@@ -847,6 +965,7 @@ export default function MusicExplorer() {
                       style={{ ...stripStyle(active, i === tracks.length - 1), width: '100%' }}
                       onMouseEnter={() => setActiveId(track.id)}
                       onFocus={() => setActiveId(track.id)}
+                      onClick={() => setActiveId(track.id)}
                     >
                       <span
                         style={{

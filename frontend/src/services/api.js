@@ -17,6 +17,12 @@ export const trackService = {
     return response.data;
   },
 
+  // Fetches full individual track details including album and audio features
+  getTrackById: async (id) => {
+    const response = await API.get(`/tracks/${encodeURIComponent(id)}`);
+    return response.data;
+  },
+
   //new analytics fetcher hook
   getDashboardMetrics: async () => {
     const response = await API.get('/analytics/dashboard');
