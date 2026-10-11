@@ -14,6 +14,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
 } from 'recharts';
 import { trackService } from '../services/api';
 
@@ -32,6 +33,28 @@ const C = {
 
 const SANS = '"Helvetica Neue", Helvetica, Arial, "Inter", sans-serif';
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
+
+const GENRE_COLORS = ['#000000', '#D9383A', '#1DB954', '#2563EB', '#D97706'];
+
+const DIST_FEATURES = [
+  { key: 'tempo', label: 'Tempo (BPM)' },
+  { key: 'danceability', label: 'Danceability' },
+  { key: 'energy', label: 'Energy' },
+  { key: 'valence', label: 'Valence' },
+  { key: 'acousticness', label: 'Acousticness' },
+  { key: 'speechiness', label: 'Speechiness' },
+  { key: 'popularity', label: 'Popularity' },
+  { key: 'loudness', label: 'Loudness (dB)' },
+];
+
+const COMP_METRICS_LIST = [
+  { key: 'popularity', label: 'Popularity' },
+  { key: 'danceability', label: 'Danceability' },
+  { key: 'energy', label: 'Energy' },
+  { key: 'valence', label: 'Valence' },
+  { key: 'acousticness', label: 'Acousticness' },
+  { key: 'tempo', label: 'Tempo' },
+];
 
 const FEATURES = [
   { key: 'danceability', label: 'DANCEABILITY' },
@@ -508,7 +531,7 @@ function VectorStatus({ genre, status }) {
 /* ------------------------------------------------------------------ */
 
 export default function MusicDashboard() {
-  const [tempo, setTempo] = useState([]);
+  const [_tempo, setTempo] = useState([]);
   const [topGenres, setTopGenres] = useState([]);
   const [scatter, setScatter] = useState([]);
   const [genreOptions, setGenreOptions] = useState([]);
@@ -522,6 +545,129 @@ export default function MusicDashboard() {
 
   const vectorA = useGenreProfile(genreA);
   const vectorB = useGenreProfile(genreB);
+
+  /* Bounded Feature Distribution states */
+  const [distFeature, setDistFeature] = useState('tempo');
+  const [distBins, setDistBins] = useState(8);
+  const [distGenre, setDistGenre] = useState('');
+  const [distData, setDistData] = useState([]);
+  const [distSummary, setDistSummary] = useState(null);
+  const [distTotal, setDistTotal] = useState(0);
+  const [distLoading, setDistLoading] = useState(false);
+  const [distError, setDistError] = useState(null);
+
+  /* Bounded Multi-Genre Comparison states */
+  const [compGenres, setCompGenres] = useState(['pop', 'rock', 'hip-hop']);
+  const [compMetrics, setCompMetrics] = useState([
+    'popularity',
+    'danceability',
+    'energy',
+    'valence',
+    'acousticness',
+  ]);
+  const [compData, setCompData] = useState([]);
+  const [compLoading, setCompLoading] = useState(false);
+  const [compError, setCompError] = useState(null);
+  const [compWarning, setCompWarning] = useState(null);
+
+  /* Fetch bounded feature distribution whenever controls change */
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setDistLoading(true);
+      setDistError(null);
+      try {
+        const res = await trackService.getFeatureDistribution({
+          feature: distFeature,
+          bins: distBins,
+          genre: distGenre || undefined,
+        });
+        if (cancelled) return;
+        const body = unwrap(res);
+        setDistData(body?.data ?? []);
+        setDistSummary(body?.summary ?? null);
+        setDistTotal(body?.totalTracks ?? 0);
+      } catch (err) {
+        if (cancelled) return;
+        setDistData([]);
+        setDistSummary(null);
+        setDistTotal(0);
+        setDistError(err?.response?.data?.message || err?.message || 'Failed to load distribution');
+      } finally {
+        if (!cancelled) setDistLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [distFeature, distBins, distGenre]);
+
+  /* Fetch multi-genre comparison whenever genres or metrics change */
+  useEffect(() => {
+    if (compGenres.length === 0) {
+      setCompData([]);
+      setCompError(null);
+      setCompWarning(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setCompLoading(true);
+      setCompError(null);
+      setCompWarning(null);
+      try {
+        const res = await trackService.getGenreComparison({
+          genres: compGenres.join(','),
+          metrics: compMetrics.join(','),
+        });
+        if (cancelled) return;
+        const body = unwrap(res);
+        setCompData(body?.data ?? []);
+        if (body?.missingGenres && body.missingGenres.length > 0) {
+          setCompWarning(`Unrecognized genre(s): ${body.missingGenres.join(', ')}`);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setCompData([]);
+        setCompError(err?.response?.data?.message || err?.message || 'Comparison request failed');
+      } finally {
+        if (!cancelled) setCompLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [compGenres, compMetrics]);
+
+  const addCompGenre = (genre) => {
+    if (!genre) return;
+    if (compGenres.includes(genre)) return;
+    if (compGenres.length >= 5) {
+      setCompWarning('Maximum 5 genres allowed for comparison');
+      return;
+    }
+    setCompWarning(null);
+    setCompGenres([...compGenres, genre]);
+  };
+
+  const removeCompGenre = (genre) => {
+    setCompWarning(null);
+    setCompGenres(compGenres.filter((g) => g !== genre));
+  };
+
+  const toggleCompMetric = (metric) => {
+    if (compMetrics.includes(metric)) {
+      if (compMetrics.length <= 1) return;
+      setCompMetrics(compMetrics.filter((m) => m !== metric));
+    } else {
+      setCompMetrics([...compMetrics, metric]);
+    }
+  };
 
   /* Fetch dashboard metrics + genre list on mount (and on retry). */
   useEffect(() => {
@@ -613,6 +759,25 @@ export default function MusicDashboard() {
   const profileB = vectorB.status === 'ready' ? vectorB.data : null;
   const radarData = buildRadarData(profileA, profileB);
 
+  const compChartData = compMetrics
+    .filter((m) => m !== 'track_count')
+    .map((m) => {
+      const metricConfig = COMP_METRICS_LIST.find((cm) => cm.key === m);
+      const row = {
+        metric: metricConfig?.label || m.toUpperCase(),
+      };
+      for (const entry of compData) {
+        let val = entry[m];
+        if (typeof val === 'number') {
+          if (m !== 'tempo' && m !== 'popularity') {
+            val = Math.round(val * 1000) / 10;
+          }
+        }
+        row[entry.genre] = val;
+      }
+      return row;
+    });
+
   const pickGenre = (name) => {
     if (!genreA) setGenreA(name);
     else setGenreB(name);
@@ -637,13 +802,107 @@ export default function MusicDashboard() {
 
         {/* Charts 1 + 2 */}
         <div className="md-two">
-          <section style={S.panel} aria-label="Tempo buckets histogram">
-            <PanelHeader index="01" title="Tempo buckets" meta="TRACKS PER BPM RANGE" />
+          <section style={S.panel} aria-label="Feature distributions histogram">
+            <PanelHeader
+              index="01"
+              title="Feature distribution"
+              meta={`${distTotal.toLocaleString()} TRACKS • ${distFeature.toUpperCase()}`}
+            />
+            <div
+              style={{
+                padding: '12px 20px',
+                borderBottom: `2px solid ${C.ink}`,
+                background: C.card,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label htmlFor="md-dist-feature" style={{ ...labelText, fontSize: 10 }}>
+                    Feature:
+                  </label>
+                  <select
+                    id="md-dist-feature"
+                    className="md-focus"
+                    value={distFeature}
+                    onChange={(e) => setDistFeature(e.target.value)}
+                    style={{ ...S.select, height: 32, width: 140, fontSize: 12, fontWeight: 700 }}
+                  >
+                    {DIST_FEATURES.map((df) => (
+                      <option key={df.key} value={df.key}>
+                        {df.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label htmlFor="md-dist-bins" style={{ ...labelText, fontSize: 10 }}>
+                    Bins:
+                  </label>
+                  <select
+                    id="md-dist-bins"
+                    className="md-focus"
+                    value={distBins}
+                    onChange={(e) => setDistBins(parseInt(e.target.value, 10))}
+                    style={{ ...S.select, height: 32, width: 90, fontSize: 12, fontWeight: 700 }}
+                  >
+                    <option value={5}>5 Bins</option>
+                    <option value={8}>8 Bins</option>
+                    <option value={10}>10 Bins</option>
+                    <option value={15}>15 Bins</option>
+                    <option value={20}>20 Bins</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label htmlFor="md-dist-genre" style={{ ...labelText, fontSize: 10 }}>
+                    Genre:
+                  </label>
+                  <select
+                    id="md-dist-genre"
+                    className="md-focus"
+                    value={distGenre}
+                    onChange={(e) => setDistGenre(e.target.value)}
+                    style={{ ...S.select, height: 32, width: 140, fontSize: 12, fontWeight: 700 }}
+                  >
+                    <option value="">All genres</option>
+                    {genreOptions.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {distSummary && (
+                <div
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: C.soft,
+                    display: 'flex',
+                    gap: 10,
+                  }}
+                >
+                  <span>AVG: {distSummary.avg_value}</span>
+                  <span>MIN: {distSummary.min_value}</span>
+                  <span>MAX: {distSummary.max_value}</span>
+                </div>
+              )}
+            </div>
+
             <div style={S.panelBody}>
               <div style={S.chartBox}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={tempo}
+                    data={distData}
                     barCategoryGap="6%"
                     margin={{ top: 8, right: 8, bottom: 24, left: 0 }}
                   >
@@ -654,7 +913,12 @@ export default function MusicDashboard() {
                       stroke={C.ink}
                       tickLine={false}
                       minTickGap={8}
-                      label={{ value: 'TEMPO (BPM)', position: 'insideBottom', offset: -14, style: axisLabel }}
+                      label={{
+                        value: `${distFeature.toUpperCase()} BUCKET`,
+                        position: 'insideBottom',
+                        offset: -14,
+                        style: axisLabel,
+                      }}
                     />
                     <YAxis
                       tick={axisTick}
@@ -665,7 +929,25 @@ export default function MusicDashboard() {
                     />
                     <Tooltip
                       cursor={{ fill: 'rgba(217, 56, 58, 0.12)' }}
-                      content={<BrutalTooltip />}
+                      content={
+                        <BrutalTooltip
+                          render={(payload, label) => {
+                            const p = payload[0]?.payload || {};
+                            return (
+                              <div>
+                                <div style={{ fontWeight: 800, marginBottom: 4 }}>{label}</div>
+                                <div>
+                                  TRACKS:{' '}
+                                  {typeof p.count === 'number'
+                                    ? p.count.toLocaleString()
+                                    : p.count}
+                                </div>
+                                {p.percentage != null && <div>SHARE: {p.percentage}%</div>}
+                              </div>
+                            );
+                          }}
+                        />
+                      }
                     />
                     <Bar
                       dataKey="count"
@@ -676,7 +958,13 @@ export default function MusicDashboard() {
                     />
                   </BarChart>
                 </ResponsiveContainer>
-                {tempo.length === 0 && <EmptyOverlay>No tempo data returned</EmptyOverlay>}
+                {distError ? (
+                  <EmptyOverlay>Error loading distribution: {distError}</EmptyOverlay>
+                ) : distData.length === 0 ? (
+                  <EmptyOverlay>
+                    {distLoading ? 'Calculating distribution...' : 'No tracks match this selection'}
+                  </EmptyOverlay>
+                ) : null}
               </div>
             </div>
           </section>
@@ -926,6 +1214,376 @@ export default function MusicDashboard() {
                 </span>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Section 04: Multi-Genre Comparison Matrix */}
+        <section style={S.panel} aria-label="Multi-genre comparative matrix">
+          <PanelHeader
+            index="04"
+            title="Multi-genre comparison matrix"
+            meta={`${compGenres.length} OF 5 GENRES SELECTED`}
+          />
+
+          <div
+            style={{
+              padding: '16px 20px',
+              borderBottom: `2px solid ${C.ink}`,
+              background: C.card,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            {/* Top row: Genre chips, Add dropdown, presets */}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <span style={labelText}>Active Genres:</span>
+                {compGenres.map((g, idx) => (
+                  <span
+                    key={g}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '4px 10px',
+                      background: C.card,
+                      border: `2px solid ${GENRE_COLORS[idx % GENRE_COLORS.length]}`,
+                      color: C.ink,
+                      fontFamily: MONO,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    <span style={swatch(GENRE_COLORS[idx % GENRE_COLORS.length])} />
+                    {g}
+                    <button
+                      type="button"
+                      className="md-focus"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: C.red,
+                        cursor: 'pointer',
+                        fontWeight: 900,
+                        padding: '0 2px',
+                        fontSize: 14,
+                        lineHeight: 1,
+                      }}
+                      onClick={() => removeCompGenre(g)}
+                      title={`Remove ${g}`}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+
+                {compGenres.length < 5 ? (
+                  <select
+                    className="md-focus"
+                    value=""
+                    onChange={(e) => addCompGenre(e.target.value)}
+                    style={{ ...S.select, height: 32, width: 140, fontSize: 11, fontWeight: 700 }}
+                  >
+                    <option value="">+ Add genre...</option>
+                    {genreOptions
+                      .filter((g) => !compGenres.includes(g))
+                      .map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.soft, fontWeight: 700 }}>
+                    (MAX 5 REACHED)
+                  </span>
+                )}
+
+                {compGenres.length > 0 && (
+                  <button
+                    type="button"
+                    className="md-focus"
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${C.ink}`,
+                      padding: '4px 8px',
+                      fontFamily: MONO,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                    }}
+                    onClick={() => setCompGenres([])}
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {/* Presets */}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ ...labelText, fontSize: 10 }}>Presets:</span>
+                <button
+                  type="button"
+                  className="md-chip md-focus"
+                  style={{ ...chipStyle, fontSize: 10, padding: '4px 8px' }}
+                  onClick={() => setCompGenres(['pop', 'rock', 'classical'])}
+                >
+                  Pop / Rock / Classical
+                </button>
+                <button
+                  type="button"
+                  className="md-chip md-focus"
+                  style={{ ...chipStyle, fontSize: 10, padding: '4px 8px' }}
+                  onClick={() => setCompGenres(['hip-hop', 'dance', 'electronic'])}
+                >
+                  Hip-Hop / Dance / Electronic
+                </button>
+                {topGenres.length >= 3 && (
+                  <button
+                    type="button"
+                    className="md-chip md-focus"
+                    style={{ ...chipStyle, fontSize: 10, padding: '4px 8px' }}
+                    onClick={() => setCompGenres(topGenres.slice(0, 3).map((g) => g.name))}
+                  >
+                    Top 3
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Metrics toggle row */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <span style={labelText}>Compare Metrics:</span>
+              {COMP_METRICS_LIST.map((m) => {
+                const active = compMetrics.includes(m.key);
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    className="md-focus"
+                    style={{
+                      padding: '4px 10px',
+                      background: active ? C.ink : C.card,
+                      color: active ? C.card : C.ink,
+                      border: `2px solid ${C.ink}`,
+                      borderRadius: 0,
+                      fontFamily: MONO,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => toggleCompMetric(m.key)}
+                  >
+                    {active ? '✓ ' : '+ '}
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {compWarning && <p style={{ ...S.warn, margin: 0 }}>{compWarning}</p>}
+          </div>
+
+          <div style={S.panelBody}>
+            {compGenres.length === 0 ? (
+              <div
+                style={{
+                  ...S.chartBox,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <EmptyOverlay>
+                  Select 1 to 5 genres above to generate comparative analytics
+                </EmptyOverlay>
+              </div>
+            ) : compError ? (
+              <div
+                style={{
+                  ...S.chartBox,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <EmptyOverlay>
+                  <span>{compError}</span>
+                  <button
+                    type="button"
+                    className="md-btn md-focus"
+                    style={{ ...S.button, marginTop: 12 }}
+                    onClick={() => setCompGenres(['pop', 'rock', 'hip-hop'])}
+                  >
+                    Reset to Default Genres
+                  </button>
+                </EmptyOverlay>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 24,
+                  opacity: compLoading ? 0.6 : 1,
+                  transition: 'opacity 150ms ease',
+                }}
+              >
+                {/* Two side-by-side charts: Metrics BarChart & Track Volume BarChart */}
+                <div className="md-two">
+                  <div>
+                    <h3 style={{ ...S.panelTitle, fontSize: 12, marginBottom: 10 }}>
+                      Audio Feature Metrics Comparison
+                    </h3>
+                    <div style={{ ...S.chartBox, height: 320 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={compChartData}
+                          margin={{ top: 12, right: 16, bottom: 24, left: 0 }}
+                          barCategoryGap="16%"
+                        >
+                          <CartesianGrid stroke={C.grid} vertical={false} />
+                          <XAxis dataKey="metric" tick={axisTick} stroke={C.ink} tickLine={false} />
+                          <YAxis tick={axisTick} stroke={C.ink} tickLine={false} width={44} />
+                          <Tooltip content={<BrutalTooltip />} />
+                          <Legend
+                            wrapperStyle={{
+                              fontFamily: MONO,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.08em',
+                              paddingTop: 8,
+                            }}
+                          />
+                          {compData.map((genreEntry, idx) => (
+                            <Bar
+                              key={genreEntry.genre}
+                              dataKey={genreEntry.genre}
+                              name={genreEntry.genre}
+                              fill={GENRE_COLORS[idx % GENRE_COLORS.length]}
+                              radius={0}
+                              isAnimationActive={false}
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 style={{ ...S.panelTitle, fontSize: 12, marginBottom: 10 }}>
+                      Track Volume per Genre
+                    </h3>
+                    <div style={{ ...S.chartBox, height: 320 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={compData.map((d) => ({
+                            genre: d.genre,
+                            track_count: d.track_count,
+                          }))}
+                          margin={{ top: 12, right: 16, bottom: 24, left: 0 }}
+                          barCategoryGap="20%"
+                        >
+                          <CartesianGrid stroke={C.grid} vertical={false} />
+                          <XAxis dataKey="genre" tick={axisTick} stroke={C.ink} tickLine={false} />
+                          <YAxis
+                            tick={axisTick}
+                            stroke={C.ink}
+                            tickLine={false}
+                            width={52}
+                            allowDecimals={false}
+                          />
+                          <Tooltip content={<BrutalTooltip />} />
+                          <Bar
+                            dataKey="track_count"
+                            name="Track Count"
+                            fill={C.ink}
+                            radius={0}
+                            isAnimationActive={false}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Data Table */}
+                <div style={{ overflowX: 'auto', border: `2px solid ${C.ink}` }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr style={{ background: C.card }}>
+                        <th style={{ ...S.th, ...S.thFirst, padding: '10px 12px' }}>Genre</th>
+                        <th style={{ ...S.th, padding: '10px 12px' }}>Track Count</th>
+                        {compMetrics.map((m) => (
+                          <th key={m} style={{ ...S.th, padding: '10px 12px' }}>
+                            {m.toUpperCase()}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compData.map((row, idx) => (
+                        <tr key={row.genre} style={{ borderBottom: `1px solid ${C.ink}` }}>
+                          <td
+                            style={{
+                              ...S.td,
+                              ...S.thFirst,
+                              padding: '10px 12px',
+                              fontWeight: 800,
+                            }}
+                          >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={swatch(GENRE_COLORS[idx % GENRE_COLORS.length])} />
+                              {row.genre}
+                            </span>
+                          </td>
+                          <td
+                            style={{
+                              ...S.td,
+                              padding: '10px 12px',
+                              fontFamily: MONO,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {row.track_count.toLocaleString()}
+                          </td>
+                          {compMetrics.map((m) => {
+                            const val = row[m];
+                            const formatted =
+                              val == null
+                                ? '--'
+                                : m !== 'tempo' && m !== 'popularity'
+                                  ? `${Math.round(val * 1000) / 10}%`
+                                  : val.toFixed(1);
+                            return (
+                              <td
+                                key={m}
+                                style={{ ...S.td, padding: '10px 12px', fontFamily: MONO }}
+                              >
+                                {formatted}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </div>

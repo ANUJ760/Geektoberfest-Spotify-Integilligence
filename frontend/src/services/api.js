@@ -34,6 +34,18 @@ export const trackService = {
     const response = await API.get('/genres');
     return response.data;
   },
+
+  // Fetches bounded feature distribution data
+  getFeatureDistribution: async (params) => {
+    const response = await API.get('/analytics/distribution', { params });
+    return response.data;
+  },
+
+  // Fetches multi-genre comparisons with track counts and audio metrics
+  getGenreComparison: async (params) => {
+    const response = await API.get('/analytics/compare', { params });
+    return response.data;
+  },
 };
 
 export default API;
