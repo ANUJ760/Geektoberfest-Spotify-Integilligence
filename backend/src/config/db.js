@@ -5,15 +5,53 @@ const path = require('path');
 // Load backend/.env for local development. Render injects environment variables.
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
-const poolConfig = process.env.DATABASE_URL
-  ? { connectionString: process.env.DATABASE_URL }
-  : {
+function buildPoolConfig() {
+  const databaseUrl = process.env.DATABASE_URL;
+  const sslFlag = process.env.DB_SSL === 'true';
+
+  if (databaseUrl) {
+    let connectionString = databaseUrl;
+    let useSsl = sslFlag;
+
+    try {
+      const parsedUrl = new URL(databaseUrl);
+      const sslMode = parsedUrl.searchParams.get('sslmode');
+      const externalRenderDatabase = parsedUrl.hostname.includes('render.com')
+        && !parsedUrl.hostname.includes('.internal');
+
+      useSsl = useSsl
+        || ['require', 'verify-ca', 'verify-full'].includes(sslMode)
+        || externalRenderDatabase;
+
+      // Pass TLS options through node-postgres directly, avoiding conflicting
+      // sslmode parsing from the connection string.
+      if (useSsl && sslMode) {
+        parsedUrl.searchParams.delete('sslmode');
+        connectionString = parsedUrl.toString();
+      }
+    } catch (error) {
+      throw new Error('DATABASE_URL must be a valid PostgreSQL connection URL.');
+    }
+
+    return {
+      connectionString,
+      ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+    };
+  }
+
+  const config = {
       user: process.env.DB_USER || 'postgres',
       host: process.env.DB_HOST || 'localhost',
       database: process.env.DB_NAME || 'spotify_intelligence',
       password: process.env.DB_PASSWORD,
       port: Number.parseInt(process.env.DB_PORT, 10) || 5432,
     };
+
+  if (sslFlag) config.ssl = { rejectUnauthorized: false };
+  return config;
+}
+
+const poolConfig = buildPoolConfig();
 
 const pool = new Pool(poolConfig);
 
