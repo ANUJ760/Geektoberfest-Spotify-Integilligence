@@ -543,10 +543,10 @@ export default function MusicExplorer() {
   const [tracks, setTracks] = useState([]);
   const [total, setTotal] = useState(null);
   const [totalPages, setTotalPages] = useState(null);
-
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [genre, setGenre] = useState('');
+  const [sortBy, setSortBy] = useState('popularity');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -584,6 +584,7 @@ export default function MusicExplorer() {
           limit: PAGE_SIZE,
           search: search.trim(),
           genre,
+          sortBy,
         });
         if (cancelled) return;
 
@@ -592,7 +593,7 @@ export default function MusicExplorer() {
         setTotal(parsed.total);
         setTotalPages(parsed.totalPages);
       } catch (err) {
-        if (cancelled) return;
+        if (!cancelled) return;
         setTracks([]);
         setTotal(null);
         setTotalPages(null);
@@ -606,7 +607,7 @@ export default function MusicExplorer() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [page, search, genre, reloadKey]);
+  }, [page, search, genre, sortBy, reloadKey]);
 
   const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
   const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
@@ -624,6 +625,11 @@ export default function MusicExplorer() {
 
   const handleGenre = (value) => {
     setGenre(value);
+    setPage(1);
+  };
+
+  const handleSort = (value) => {
+    setSortBy(value);
     setPage(1);
   };
 
@@ -684,6 +690,21 @@ export default function MusicExplorer() {
                 {genres.map((g) => (
                   <option key={g} value={g}>{g}</option>
                 ))}
+              </select>
+            </div>
+
+            <div style={S.field}>
+              <label htmlFor="mx-sort" style={label}>Sort by</label>
+              <select
+                id="mx-sort"
+                className="mx-focus"
+                value={sortBy}
+                onChange={(e) => handleSort(e.target.value)}
+                style={S.select}
+              >
+                <option value="popularity">Popularity</option>
+                <option value="name">Name (A–Z)</option>
+                <option value="duration">Duration</option>
               </select>
             </div>
           </div>
