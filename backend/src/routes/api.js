@@ -4,12 +4,18 @@ const router = express.Router();
 // Import separate controller functions (we will create these next)
 const trackController = require('../controllers/trackController');
 const analyticsController = require('../controllers/analyticsController');
+const recommendationController = require('../controllers/recommendationController');
 
 // --- Feature 1: Music Explorer Routes ---
 // Handles paginated searching, filtering, and listing tracks
 router.get('/tracks', trackController.getAllTracks);
 // Fetches full individual track details by its unique string ID
 router.get('/tracks/:id', trackController.getTrackById);
+
+// --- Feature 3: Recommendation Routes ---
+// Finds tracks similar to a seed track or target audio feature profile
+router.get('/recommendations', recommendationController.getRecommendations);
+router.get('/tracks/:id/recommendations', recommendationController.getTrackRecommendations);
 
 // --- Feature 4: Genre DNA Routes ---
 // Returns a distinct plain array of all available genres in the DB

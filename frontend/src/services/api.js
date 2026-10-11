@@ -34,6 +34,18 @@ export const trackService = {
     const response = await API.get('/genres');
     return response.data;
   },
+
+  // Fetches audio feature based recommendations
+  getRecommendations: async (params) => {
+    const response = await API.get('/recommendations', { params });
+    return response.data;
+  },
+
+  // Fetches recommendations for a specific track
+  getTrackRecommendations: async (trackId, params = {}) => {
+    const response = await API.get(`/tracks/${trackId}/recommendations`, { params });
+    return response.data;
+  },
 };
 
 export default API;

@@ -110,6 +110,14 @@ const normalizeTrack = (raw, index) => {
     artist: formatArtists(raw.artists ?? raw.artist_name ?? raw.artist),
     genre: raw.track_genre ?? raw.genre ?? 'Unclassified',
     durationMs: raw.duration_ms,
+    album: raw.album_name,
+    popularity: raw.popularity != null ? Number(raw.popularity) : null,
+    danceability: raw.danceability != null ? Number(raw.danceability) : null,
+    energy: raw.energy != null ? Number(raw.energy) : null,
+    valence: raw.valence != null ? Number(raw.valence) : null,
+    acousticness: raw.acousticness != null ? Number(raw.acousticness) : null,
+    tempo: raw.tempo != null ? Number(raw.tempo) : null,
+    matchScore: raw.match_score != null ? Number(raw.match_score) : null,
   };
 };
 
@@ -553,6 +561,91 @@ export default function MusicExplorer() {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeId, setActiveId] = useState(null);
 
+  /* Recommendation mode states */
+  const [activeTab, setActiveTab] = useState('tracks'); // 'tracks' | 'recommendations'
+  const [recSeedTrack, setRecSeedTrack] = useState(null);
+  const [recFeatures, setRecFeatures] = useState({
+    danceability: 0.65,
+    energy: 0.7,
+    valence: 0.55,
+    acousticness: 0.2,
+    tempo: 120,
+  });
+  const [recGenre, setRecGenre] = useState('');
+  const [recTracks, setRecTracks] = useState([]);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState(null);
+
+  const fetchRecommendations = async (customParams = {}) => {
+    setRecLoading(true);
+    setRecError(null);
+    try {
+      const params = {
+        limit: 10,
+        ...customParams,
+      };
+
+      if (!params.track_id) {
+        if (params.danceability === undefined) params.danceability = recFeatures.danceability;
+        if (params.energy === undefined) params.energy = recFeatures.energy;
+        if (params.valence === undefined) params.valence = recFeatures.valence;
+        if (params.acousticness === undefined) params.acousticness = recFeatures.acousticness;
+        if (params.tempo === undefined) params.tempo = recFeatures.tempo;
+      }
+
+      if (recGenre && !params.genre) {
+        params.genre = recGenre;
+      }
+
+      const res = await trackService.getRecommendations(params);
+      const list = res?.data ?? [];
+      const parsed = list.map(normalizeTrack);
+      setRecTracks(parsed);
+      if (parsed.length > 0 && !activeId) {
+        setActiveId(parsed[0].id);
+      }
+    } catch (err) {
+      setRecError(err?.response?.data?.message || err?.message || 'Failed to fetch recommendations');
+      setRecTracks([]);
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  const handleExploreSimilar = (track) => {
+    if (!track) return;
+    setRecSeedTrack(track);
+    const updatedFeatures = {
+      danceability: track.danceability != null ? Number(track.danceability) : 0.65,
+      energy: track.energy != null ? Number(track.energy) : 0.7,
+      valence: track.valence != null ? Number(track.valence) : 0.55,
+      acousticness: track.acousticness != null ? Number(track.acousticness) : 0.2,
+      tempo: track.tempo != null ? Math.round(Number(track.tempo)) : 120,
+    };
+    setRecFeatures(updatedFeatures);
+    setActiveTab('recommendations');
+    fetchRecommendations({
+      track_id: track.id,
+      ...updatedFeatures,
+    });
+  };
+
+  const handleApplySliders = () => {
+    fetchRecommendations({
+      track_id: recSeedTrack?.id,
+      ...recFeatures,
+      genre: recGenre || undefined,
+    });
+  };
+
+  const handleClearSeed = () => {
+    setRecSeedTrack(null);
+    fetchRecommendations({
+      ...recFeatures,
+      genre: recGenre || undefined,
+    });
+  };
+
   /* Genres: load once on mount */
   useEffect(() => {
     let cancelled = false;
@@ -608,9 +701,15 @@ export default function MusicExplorer() {
     };
   }, [page, search, genre, reloadKey]);
 
-  const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
-  const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
-  const activeNumber = (page - 1) * PAGE_SIZE + activeIndex + 1;
+  const allKnownTracks = [...tracks, ...recTracks];
+  const activeTrack =
+    allKnownTracks.find((t) => t.id === activeId) ??
+    (activeTab === 'recommendations' ? recTracks[0] ?? tracks[0] : tracks[0] ?? recTracks[0]) ??
+    null;
+  const isFromTracks = tracks.some((t) => t.id === activeTrack?.id);
+  const activeNumber = isFromTracks
+    ? (page - 1) * PAGE_SIZE + tracks.indexOf(activeTrack) + 1
+    : recTracks.findIndex((t) => t.id === activeTrack?.id) + 1;
 
   const hasPrev = page > 1;
   const hasNext = totalPages != null ? page < totalPages : tracks.length === PAGE_SIZE;
@@ -736,6 +835,22 @@ export default function MusicExplorer() {
                   <span style={S.badgeLine} title={activeTrack.genre}>
                     {truncate(activeTrack.genre, 30)}
                   </span>
+                  <button
+                    type="button"
+                    className="mx-btn mx-focus"
+                    style={{
+                      ...S.button,
+                      height: 30,
+                      padding: '0 12px',
+                      fontSize: 10,
+                      background: C.ink,
+                      color: C.card,
+                    }}
+                    onClick={() => handleExploreSimilar(activeTrack)}
+                    title="Find tracks with matching audio features"
+                  >
+                    ⚡ Find Similar
+                  </button>
                 </div>
 
                 <div>
@@ -772,6 +887,41 @@ export default function MusicExplorer() {
                     <dd style={{ ...S.metaMono, color: C.red }}>#{pad2(activeNumber)}</dd>
                   </div>
                 </dl>
+
+                {/* Audio features profile bar */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    paddingTop: 8,
+                    borderTop: `1px solid ${C.ghost}`,
+                    fontFamily: MONO,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span style={{ padding: '3px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                    Dance: {activeTrack.danceability != null ? `${Math.round(activeTrack.danceability * 100)}%` : '--'}
+                  </span>
+                  <span style={{ padding: '3px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                    Energy: {activeTrack.energy != null ? `${Math.round(activeTrack.energy * 100)}%` : '--'}
+                  </span>
+                  <span style={{ padding: '3px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                    Valence: {activeTrack.valence != null ? `${Math.round(activeTrack.valence * 100)}%` : '--'}
+                  </span>
+                  <span style={{ padding: '3px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                    Acoustic: {activeTrack.acousticness != null ? `${Math.round(activeTrack.acousticness * 100)}%` : '--'}
+                  </span>
+                  <span style={{ padding: '3px 8px', background: C.ghost, border: `1px solid ${C.ink}` }}>
+                    Tempo: {activeTrack.tempo != null ? `${Math.round(activeTrack.tempo)} BPM` : '--'}
+                  </span>
+                  {activeTrack.matchScore != null && (
+                    <span style={{ padding: '3px 8px', background: C.red, color: C.card, border: `1px solid ${C.ink}` }}>
+                      {activeTrack.matchScore}% Match
+                    </span>
+                  )}
+                </div>
               </>
             ) : (
               <div style={{ margin: 'auto 0', fontSize: 20, fontWeight: 700, lineHeight: 1.3 }}>
@@ -783,151 +933,586 @@ export default function MusicExplorer() {
           </div>
         </section>
 
-        {/* Right: result strips */}
-        <section style={S.right} aria-label="Track results">
-          <div style={S.rightHead}>
-            <h2 style={S.rightTitle}>Results</h2>
-            <span style={S.rightCount}>
-              {tracks.length > 0 ? `${pad2(tracks.length)} on this page` : '00 on this page'}
-            </span>
+        {/* Right: result strips & recommendations */}
+        <section style={S.right} aria-label="Track results and recommendations">
+          {/* View mode switcher */}
+          <div style={{ display: 'flex', gap: 8, borderBottom: `2px solid ${C.ink}`, paddingBottom: 10 }}>
+            <button
+              type="button"
+              className="mx-btn mx-focus"
+              style={chipStyle(activeTab === 'tracks')}
+              onClick={() => setActiveTab('tracks')}
+            >
+              All Tracks ({total != null ? total.toLocaleString() : '...'})
+            </button>
+            <button
+              type="button"
+              className="mx-btn mx-focus"
+              style={chipStyle(activeTab === 'recommendations')}
+              onClick={() => {
+                setActiveTab('recommendations');
+                if (recTracks.length === 0) {
+                  if (activeTrack) {
+                    handleExploreSimilar(activeTrack);
+                  } else {
+                    fetchRecommendations();
+                  }
+                }
+              }}
+            >
+              🎯 Recommendations {recSeedTrack ? `(Seeded)` : ''}
+            </button>
           </div>
 
-          {error ? (
-            <div style={S.statusBox} role="alert">
-              <p style={{ margin: 0, color: C.ink }}>
-                Couldn&apos;t load tracks ({truncate(error, 100)}). Check that the API is running, then retry.
-              </p>
-              <button
-                type="button"
-                className="mx-btn mx-focus"
-                style={S.button}
-                onClick={() => setReloadKey((k) => k + 1)}
-              >
-                Retry
-              </button>
-            </div>
-          ) : tracks.length === 0 ? (
-            <div style={S.statusBox}>
-              <p style={{ margin: 0, color: C.ink }}>
-                {loading
-                  ? 'Loading tracks'
-                  : 'No tracks match. Clear the search or choose another genre.'}
-              </p>
-            </div>
+          {activeTab === 'tracks' ? (
+            <>
+              <div style={S.rightHead}>
+                <h2 style={S.rightTitle}>Results</h2>
+                <span style={S.rightCount}>
+                  {tracks.length > 0 ? `${pad2(tracks.length)} on this page` : '00 on this page'}
+                </span>
+              </div>
+
+              {error ? (
+                <div style={S.statusBox} role="alert">
+                  <p style={{ margin: 0, color: C.ink }}>
+                    Couldn&apos;t load tracks ({truncate(error, 100)}). Check that the API is running, then retry.
+                  </p>
+                  <button
+                    type="button"
+                    className="mx-btn mx-focus"
+                    style={S.button}
+                    onClick={() => setReloadKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : tracks.length === 0 ? (
+                <div style={S.statusBox}>
+                  <p style={{ margin: 0, color: C.ink }}>
+                    {loading
+                      ? 'Loading tracks'
+                      : 'No tracks match. Clear the search or choose another genre.'}
+                  </p>
+                </div>
+              ) : (
+                <ol style={{ ...S.list, opacity: loading ? 0.55 : 1 }}>
+                  {tracks.map((track, i) => {
+                    const active = activeTrack?.id === track.id;
+                    return (
+                      <li key={track.id} style={{ display: 'flex', flex: 1 }}>
+                        <div
+                          className="mx-strip mx-focus"
+                          tabIndex={0}
+                          style={{ ...stripStyle(active, i === tracks.length - 1), width: '100%' }}
+                          onMouseEnter={() => setActiveId(track.id)}
+                          onFocus={() => setActiveId(track.id)}
+                        >
+                          <span
+                            style={{
+                              fontFamily: MONO,
+                              fontWeight: 900,
+                              fontSize: 30,
+                              letterSpacing: '-0.04em',
+                              color: active ? C.red : C.ink,
+                            }}
+                          >
+                            {pad2((page - 1) * PAGE_SIZE + i + 1)}
+                          </span>
+
+                          <div style={{ minWidth: 0 }}>
+                            <span
+                              style={{
+                                ...ellipsis,
+                                color: 'inherit',
+                                fontSize: 'clamp(17px, 1.6vw, 22px)',
+                                fontWeight: 800,
+                                letterSpacing: '-0.03em',
+                              }}
+                              title={track.title}
+                            >
+                              {truncate(track.title)}
+                            </span>
+                            <span
+                              style={{
+                                ...ellipsis,
+                                marginTop: 4,
+                                fontSize: 14,
+                                color: active ? 'rgba(255,255,255,0.72)' : C.soft,
+                              }}
+                              title={track.artist}
+                            >
+                              {truncate(track.artist)}
+                            </span>
+                          </div>
+
+                          <div style={{ textAlign: 'right', minWidth: 0 }}>
+                            <span
+                              style={{
+                                display: 'block',
+                                fontFamily: MONO,
+                                fontWeight: 800,
+                                fontSize: 18,
+                                color: 'inherit',
+                              }}
+                            >
+                              {formatDuration(track.durationMs)}
+                            </span>
+                            <span
+                              className="mx-hide-sm"
+                              style={{
+                                ...ellipsis,
+                                maxWidth: 130,
+                                marginTop: 4,
+                                marginLeft: 'auto',
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: '0.1em',
+                                textTransform: 'uppercase',
+                                color: active ? C.red : C.soft,
+                              }}
+                              title={track.genre}
+                            >
+                              {truncate(track.genre, 24)}
+                            </span>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+
+              <div style={S.pager}>
+                <span style={S.pagerInfo}>
+                  Page {pad2(page)}
+                  {totalPages ? ` / ${pad2(totalPages)}` : ''}
+                </span>
+                <div style={S.pagerButtons}>
+                  <button
+                    type="button"
+                    className="mx-btn mx-focus"
+                    disabled={!hasPrev || loading}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    style={{ ...S.button, ...(!hasPrev || loading ? S.buttonDisabled : null) }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    className="mx-btn mx-focus"
+                    disabled={!hasNext || loading}
+                    onClick={() => setPage((p) => p + 1)}
+                    style={{ ...S.button, ...(!hasNext || loading ? S.buttonDisabled : null) }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
           ) : (
-            <ol style={{ ...S.list, opacity: loading ? 0.55 : 1 }}>
-              {tracks.map((track, i) => {
-                const active = activeTrack?.id === track.id;
-                return (
-                  <li key={track.id} style={{ display: 'flex', flex: 1 }}>
-                    <div
-                      className="mx-strip mx-focus"
-                      tabIndex={0}
-                      style={{ ...stripStyle(active, i === tracks.length - 1), width: '100%' }}
-                      onMouseEnter={() => setActiveId(track.id)}
-                      onFocus={() => setActiveId(track.id)}
+            <>
+              {/* Recommendations view */}
+              <div style={S.rightHead}>
+                <div>
+                  <h2 style={S.rightTitle}>Audio Recommendations</h2>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: C.soft }}>
+                    {recSeedTrack
+                      ? `Tuned from: ${truncate(recSeedTrack.title, 32)} (${truncate(recSeedTrack.artist, 24)})`
+                      : 'Finding nearest tracks matching target audio features'}
+                  </p>
+                </div>
+                <span style={S.rightCount}>
+                  {recTracks.length > 0 ? `${pad2(recTracks.length)} matches` : '00 matches'}
+                </span>
+              </div>
+
+              {/* Controls card */}
+              <div
+                style={{
+                  padding: 16,
+                  background: C.card,
+                  border: `2px solid ${C.ink}`,
+                  boxShadow: `4px 4px 0 ${C.ink}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                {recSeedTrack && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: C.ghost,
+                      padding: '6px 12px',
+                      border: `1px solid ${C.ink}`,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span>
+                      <strong>Seed:</strong> {recSeedTrack.title} — {recSeedTrack.artist}
+                    </span>
+                    <button
+                      type="button"
+                      className="mx-focus"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: C.red,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                      onClick={handleClearSeed}
                     >
-                      <span
-                        style={{
-                          fontFamily: MONO,
-                          fontWeight: 900,
-                          fontSize: 30,
-                          letterSpacing: '-0.04em',
-                          color: active ? C.red : C.ink,
-                        }}
-                      >
-                        {pad2((page - 1) * PAGE_SIZE + i + 1)}
-                      </span>
+                      ✕ Clear Seed
+                    </button>
+                  </div>
+                )}
 
-                      <div style={{ minWidth: 0 }}>
-                        <span
-                          style={{
-                            ...ellipsis,
-                            color: 'inherit',
-                            fontSize: 'clamp(17px, 1.6vw, 22px)',
-                            fontWeight: 800,
-                            letterSpacing: '-0.03em',
-                          }}
-                          title={track.title}
-                        >
-                          {truncate(track.title)}
-                        </span>
-                        <span
-                          style={{
-                            ...ellipsis,
-                            marginTop: 4,
-                            fontSize: 14,
-                            color: active ? 'rgba(255,255,255,0.72)' : C.soft,
-                          }}
-                          title={track.artist}
-                        >
-                          {truncate(track.artist)}
-                        </span>
-                      </div>
-
-                      <div style={{ textAlign: 'right', minWidth: 0 }}>
-                        <span
-                          style={{
-                            display: 'block',
-                            fontFamily: MONO,
-                            fontWeight: 800,
-                            fontSize: 18,
-                            color: 'inherit',
-                          }}
-                        >
-                          {formatDuration(track.durationMs)}
-                        </span>
-                        <span
-                          className="mx-hide-sm"
-                          style={{
-                            ...ellipsis,
-                            maxWidth: 130,
-                            marginTop: 4,
-                            marginLeft: 'auto',
-                            fontSize: 10,
-                            fontWeight: 800,
-                            letterSpacing: '0.1em',
-                            textTransform: 'uppercase',
-                            color: active ? C.red : C.soft,
-                          }}
-                          title={track.genre}
-                        >
-                          {truncate(track.genre, 24)}
-                        </span>
-                      </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: 12,
+                    fontSize: 11,
+                    fontFamily: MONO,
+                    fontWeight: 700,
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Dance</span>
+                      <span>{Math.round(recFeatures.danceability * 100)}%</span>
                     </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={recFeatures.danceability}
+                      onChange={(e) =>
+                        setRecFeatures((prev) => ({ ...prev, danceability: parseFloat(e.target.value) }))
+                      }
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
 
-          <div style={S.pager}>
-            <span style={S.pagerInfo}>
-              Page {pad2(page)}
-              {totalPages ? ` / ${pad2(totalPages)}` : ''}
-            </span>
-            <div style={S.pagerButtons}>
-              <button
-                type="button"
-                className="mx-btn mx-focus"
-                disabled={!hasPrev || loading}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                style={{ ...S.button, ...(!hasPrev || loading ? S.buttonDisabled : null) }}
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                className="mx-btn mx-focus"
-                disabled={!hasNext || loading}
-                onClick={() => setPage((p) => p + 1)}
-                style={{ ...S.button, ...(!hasNext || loading ? S.buttonDisabled : null) }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Energy</span>
+                      <span>{Math.round(recFeatures.energy * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={recFeatures.energy}
+                      onChange={(e) =>
+                        setRecFeatures((prev) => ({ ...prev, energy: parseFloat(e.target.value) }))
+                      }
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Valence</span>
+                      <span>{Math.round(recFeatures.valence * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={recFeatures.valence}
+                      onChange={(e) =>
+                        setRecFeatures((prev) => ({ ...prev, valence: parseFloat(e.target.value) }))
+                      }
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Acoustic</span>
+                      <span>{Math.round(recFeatures.acousticness * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={recFeatures.acousticness}
+                      onChange={(e) =>
+                        setRecFeatures((prev) => ({ ...prev, acousticness: parseFloat(e.target.value) }))
+                      }
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Tempo</span>
+                      <span>{Math.round(recFeatures.tempo)} BPM</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="200"
+                      step="1"
+                      value={recFeatures.tempo}
+                      onChange={(e) =>
+                        setRecFeatures((prev) => ({ ...prev, tempo: parseInt(e.target.value, 10) }))
+                      }
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label htmlFor="mx-rec-genre" style={{ ...label, fontSize: 10 }}>
+                      Filter Genre:
+                    </label>
+                    <select
+                      id="mx-rec-genre"
+                      value={recGenre}
+                      onChange={(e) => setRecGenre(e.target.value)}
+                      style={{ ...S.select, height: 36, width: 160, fontSize: 13 }}
+                    >
+                      <option value="">Any genre</option>
+                      {genres.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {activeTrack && (
+                      <button
+                        type="button"
+                        className="mx-btn mx-focus"
+                        style={{ ...S.button, height: 36, padding: '0 12px', fontSize: 10 }}
+                        onClick={() => handleExploreSimilar(activeTrack)}
+                      >
+                        Reset to Spinning
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="mx-btn mx-focus"
+                      style={{
+                        ...S.button,
+                        height: 36,
+                        padding: '0 16px',
+                        fontSize: 10,
+                        background: C.red,
+                        color: C.card,
+                      }}
+                      onClick={handleApplySliders}
+                    >
+                      Update Matches
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {recError ? (
+                <div style={S.statusBox} role="alert">
+                  <p style={{ margin: 0, color: C.ink }}>
+                    Failed to load recommendations ({truncate(recError, 100)}).
+                  </p>
+                  <button
+                    type="button"
+                    className="mx-btn mx-focus"
+                    style={S.button}
+                    onClick={() => handleApplySliders()}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : recTracks.length === 0 ? (
+                <div style={S.statusBox}>
+                  <p style={{ margin: 0, color: C.ink }}>
+                    {recLoading
+                      ? 'Analyzing audio features and finding nearest neighbors in vector space...'
+                      : 'No recommendations found. Adjust feature sliders or clear the genre filter.'}
+                  </p>
+                </div>
+              ) : (
+                <ol style={{ ...S.list, opacity: recLoading ? 0.55 : 1 }}>
+                  {recTracks.map((track, i) => {
+                    const active = activeTrack?.id === track.id;
+                    return (
+                      <li key={track.id} style={{ display: 'flex', flex: 1 }}>
+                        <div
+                          className="mx-strip mx-focus"
+                          tabIndex={0}
+                          style={{ ...stripStyle(active, i === recTracks.length - 1), width: '100%' }}
+                          onMouseEnter={() => setActiveId(track.id)}
+                          onFocus={() => setActiveId(track.id)}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              minWidth: 60,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: MONO,
+                                fontWeight: 900,
+                                fontSize: 20,
+                                color: active ? C.red : C.ink,
+                                lineHeight: 1,
+                              }}
+                            >
+                              {track.matchScore != null ? `${track.matchScore}%` : `#${i + 1}`}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 8,
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                                marginTop: 2,
+                              }}
+                            >
+                              MATCH
+                            </span>
+                          </div>
+
+                          <div style={{ minWidth: 0 }}>
+                            <span
+                              style={{
+                                ...ellipsis,
+                                color: 'inherit',
+                                fontSize: 'clamp(16px, 1.5vw, 20px)',
+                                fontWeight: 800,
+                                letterSpacing: '-0.03em',
+                              }}
+                              title={track.title}
+                            >
+                              {truncate(track.title)}
+                            </span>
+                            <span
+                              style={{
+                                ...ellipsis,
+                                marginTop: 2,
+                                fontSize: 13,
+                                color: active ? 'rgba(255,255,255,0.72)' : C.soft,
+                              }}
+                              title={track.artist}
+                            >
+                              {truncate(track.artist)}
+                            </span>
+                            <div
+                              className="mx-hide-sm"
+                              style={{
+                                display: 'flex',
+                                gap: 8,
+                                marginTop: 4,
+                                fontSize: 10,
+                                fontFamily: MONO,
+                                color: active ? 'rgba(255,255,255,0.6)' : C.soft,
+                              }}
+                            >
+                              <span>D: {track.danceability != null ? Math.round(track.danceability * 100) : '--'}%</span>
+                              <span>E: {track.energy != null ? Math.round(track.energy * 100) : '--'}%</span>
+                              <span>V: {track.valence != null ? Math.round(track.valence * 100) : '--'}%</span>
+                              <span>{track.tempo != null ? `${Math.round(track.tempo)} BPM` : ''}</span>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              textAlign: 'right',
+                              minWidth: 0,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'flex-end',
+                              gap: 6,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'block',
+                                fontFamily: MONO,
+                                fontWeight: 800,
+                                fontSize: 16,
+                                color: 'inherit',
+                              }}
+                            >
+                              {formatDuration(track.durationMs)}
+                            </span>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                type="button"
+                                className="mx-focus"
+                                style={{
+                                  padding: '2px 8px',
+                                  background: active ? C.card : C.ink,
+                                  color: active ? C.ink : C.card,
+                                  border: `1px solid ${C.ink}`,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  textTransform: 'uppercase',
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveId(track.id);
+                                }}
+                                title="Play track in player deck"
+                              >
+                                Spin
+                              </button>
+                              <button
+                                type="button"
+                                className="mx-focus"
+                                style={{
+                                  padding: '2px 8px',
+                                  background: C.red,
+                                  color: C.card,
+                                  border: `1px solid ${C.ink}`,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  textTransform: 'uppercase',
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExploreSimilar(track);
+                                }}
+                                title="Seed recommendations from this track"
+                              >
+                                Seed
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </>
+          )}
         </section>
       </main>
 
