@@ -146,13 +146,11 @@ def build_genre_analytics(tracks):
     )
 
 
-def run_pipeline():
+def run_pipeline(replace_all=False):
     tracks = prepare_tracks()
-    genre_metrics = build_genre_analytics(tracks)
     target = make_url(DATABASE_URL)
     print(
-        f"Prepared {len(tracks):,} unique tracks and {len(genre_metrics):,} "
-        f"genres from {CSV_PATH.name}."
+        f"Prepared {len(tracks):,} unique tracks from {CSV_PATH.name}."
     )
     print(
         "Connecting to PostgreSQL database "
@@ -160,25 +158,104 @@ def run_pipeline():
     )
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"connect_timeout": 15})
 
+    upsert_tracks_sql = """
+        INSERT INTO tracks (
+            track_id, track_name, artists, album_name, track_genre,
+            popularity, duration_ms, explicit, danceability, energy,
+            loudness, speechiness, acousticness, instrumentalness,
+            liveness, valence, tempo
+        )
+        SELECT 
+            track_id, track_name, artists, album_name, track_genre,
+            popularity, duration_ms, explicit, danceability, energy,
+            loudness, speechiness, acousticness, instrumentalness,
+            liveness, valence, tempo
+        FROM staging_tracks
+        ON CONFLICT (track_id) DO UPDATE SET
+            track_name = EXCLUDED.track_name,
+            artists = EXCLUDED.artists,
+            album_name = EXCLUDED.album_name,
+            track_genre = EXCLUDED.track_genre,
+            popularity = EXCLUDED.popularity,
+            duration_ms = EXCLUDED.duration_ms,
+            explicit = EXCLUDED.explicit,
+            danceability = EXCLUDED.danceability,
+            energy = EXCLUDED.energy,
+            loudness = EXCLUDED.loudness,
+            speechiness = EXCLUDED.speechiness,
+            acousticness = EXCLUDED.acousticness,
+            instrumentalness = EXCLUDED.instrumentalness,
+            liveness = EXCLUDED.liveness,
+            valence = EXCLUDED.valence,
+            tempo = EXCLUDED.tempo;
+    """
+
+    refresh_genre_analytics_sql = """
+        INSERT INTO genre_analytics (
+            track_genre, avg_popularity, avg_danceability, avg_energy,
+            avg_valence, avg_acousticness, avg_instrumentalness,
+            avg_speechiness, avg_tempo, track_count
+        )
+        SELECT 
+            track_genre,
+            AVG(popularity) as avg_popularity,
+            AVG(danceability) as avg_danceability,
+            AVG(energy) as avg_energy,
+            AVG(valence) as avg_valence,
+            AVG(acousticness) as avg_acousticness,
+            AVG(instrumentalness) as avg_instrumentalness,
+            AVG(speechiness) as avg_speechiness,
+            AVG(tempo) as avg_tempo,
+            COUNT(track_id) as track_count
+        FROM tracks
+        WHERE track_genre IS NOT NULL
+        GROUP BY track_genre
+        ON CONFLICT (track_genre) DO UPDATE SET
+            avg_popularity = EXCLUDED.avg_popularity,
+            avg_danceability = EXCLUDED.avg_danceability,
+            avg_energy = EXCLUDED.avg_energy,
+            avg_valence = EXCLUDED.avg_valence,
+            avg_acousticness = EXCLUDED.avg_acousticness,
+            avg_instrumentalness = EXCLUDED.avg_instrumentalness,
+            avg_speechiness = EXCLUDED.avg_speechiness,
+            avg_tempo = EXCLUDED.avg_tempo,
+            track_count = EXCLUDED.track_count;
+    """
+
     try:
-        # Keep both tables in sync: a failed import rolls the whole transaction
-        # back, and repeat imports replace rows without dropping table schema.
+        # Atomic transactional import: all operations occur within a single transaction.
+        # If an import fails or is interrupted at any point, the entire transaction is rolled
+        # back automatically, preserving data integrity in both tracks and genre_analytics.
         with engine.begin() as connection:
             for statement in CREATE_TABLES:
                 connection.execute(text(statement))
 
-            connection.execute(text("TRUNCATE TABLE tracks, genre_analytics"))
+            if replace_all:
+                print("Performing full table replacement (--replace requested)...")
+                connection.execute(text("TRUNCATE TABLE tracks, genre_analytics"))
 
+            # Create a temporary staging table that is automatically dropped on commit/rollback
+            connection.execute(text(
+                "CREATE TEMP TABLE staging_tracks (LIKE tracks INCLUDING DEFAULTS) ON COMMIT DROP"
+            ))
+
+            # Stream chunks into staging table
             tracks.to_sql(
-                "tracks", connection, if_exists="append", index=False,
-                chunksize=1000, method="multi",
-            )
-            genre_metrics.to_sql(
-                "genre_analytics", connection, if_exists="append", index=False,
+                "staging_tracks", connection, if_exists="append", index=False,
                 chunksize=1000, method="multi",
             )
 
-        print(f"Loaded {len(tracks):,} tracks and {len(genre_metrics):,} genres.")
+            # Atomic upsert from staging into tracks
+            connection.execute(text(upsert_tracks_sql))
+
+            # Atomically recompute/upsert genre_analytics from all tracks in the database
+            connection.execute(text(refresh_genre_analytics_sql))
+
+            # Query final totals
+            genre_count = connection.execute(text("SELECT COUNT(*) FROM genre_analytics")).scalar()
+            total_tracks = connection.execute(text("SELECT COUNT(*) FROM tracks")).scalar()
+
+        print(f"Upsert completed: {total_tracks:,} total tracks and {genre_count:,} genres in database.")
         print("CSV import completed successfully.")
     except Exception as error:
         # The DBAPI error provides actionable details without printing the URL.
@@ -192,4 +269,6 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    import sys
+    replace = "--replace" in sys.argv or "--truncate" in sys.argv
+    run_pipeline(replace_all=replace)

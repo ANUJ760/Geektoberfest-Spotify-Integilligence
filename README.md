@@ -56,9 +56,12 @@ python -m pip install -r Data_processing/requirements.txt
 python Data_processing/clean_data.py
 ```
 
-The importer reads `DATABASE_URL` from the current environment, the repository-root `.env`, or `backend/.env`. It creates the `tracks` and `genre_analytics` tables if needed, then replaces their rows with the CSV data in one transaction. It prints the number of rows prepared and the database host/name it targets. Do not commit or paste the connection URL into issues.
+The importer reads `DATABASE_URL` from the current environment, the repository-root `.env`, or `backend/.env`. It creates the `tracks` and `genre_analytics` tables if needed, then safely upserts rows into `tracks` and refreshes `genre_analytics` in a single atomic transaction. It prints the number of rows prepared and the database host/name it targets. Do not commit or paste the connection URL into issues.
 
-The importer must be run separately; starting the backend creates the schema but does not import the CSV. Running the importer again replaces the existing table rows.
+**Safe reruns and failure recovery:**
+- The import runs inside an atomic transaction using an isolated temporary staging table. If an import fails or is interrupted at any point, PostgreSQL automatically rolls back all changes, ensuring `tracks` and `genre_analytics` remain completely consistent with zero data loss or partial writes.
+- Rerunning the importer (`python Data_processing/clean_data.py`) is safe and idempotent: it updates existing tracks by `track_id` and adds new records without dropping tables or wiping data.
+- To recover from an interrupted run, simply re-run `python Data_processing/clean_data.py`. If a full table replacement is explicitly desired, use `python Data_processing/clean_data.py --replace`.
 
 ### 4. Start the backend
 
