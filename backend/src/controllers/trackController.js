@@ -1,41 +1,79 @@
 const db=require('../config/db');
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
 //Fetch tracks with dynamic searching.filtering and pagination
 exports.getAllTracks = async(req,res,next)=>{
     try{
-        const page=parseInt(req.query.page) || 1;
-        const limit=parseInt(req.query.limit) || 20;
-        const offset=(page-1)*limit;
+        let page = DEFAULT_PAGE;
+        if (req.query.page !== undefined && req.query.page !== '') {
+            const parsedPage = Number(req.query.page);
+            if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Page must be a positive integer greater than or equal to 1.'
+                });
+            }
+            page = parsedPage;
+        }
 
-        const { search,genre,explicit } =req.query;
+        let limit = DEFAULT_LIMIT;
+        if (req.query.limit !== undefined && req.query.limit !== '') {
+            const parsedLimit = Number(req.query.limit);
+            if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Limit must be a positive integer greater than or equal to 1.'
+                });
+            }
+            limit = Math.min(parsedLimit, MAX_LIMIT);
+        }
+
+        const offset = (page - 1) * limit;
+
+        const { search, genre, explicit } = req.query;
 
         let queryText = `SELECT * FROM tracks WHERE 1=1`;
         let countQueryText = `SELECT COUNT(*) FROM tracks WHERE 1=1`;
-        let queryParams=[];
+        let queryParams = [];
 
         //search track name or artist field
-        if(search){
+        if (search) {
             queryParams.push(`%${search}%`);
             const searchIndex = queryParams.length;
-      queryText += ` AND (track_name ILIKE $${searchIndex} OR artists ILIKE $${searchIndex})`;
-      countQueryText += ` AND (track_name ILIKE $${searchIndex} OR artists ILIKE $${searchIndex})`;
+            queryText += ` AND (track_name ILIKE $${searchIndex} OR artists ILIKE $${searchIndex})`;
+            countQueryText += ` AND (track_name ILIKE $${searchIndex} OR artists ILIKE $${searchIndex})`;
         }
 
         //genre filter
-         if (genre) {
-      queryParams.push(genre);
-      const genreIndex = queryParams.length;
-      queryText += ` AND track_genre = $${genreIndex}`;
-      countQueryText += ` AND track_genre = $${genreIndex}`;
-    }
+        if (genre) {
+            queryParams.push(genre);
+            const genreIndex = queryParams.length;
+            queryText += ` AND track_genre = $${genreIndex}`;
+            countQueryText += ` AND track_genre = $${genreIndex}`;
+        }
 
-    // Explicit filter (0 for clean, 1 for explicit)
-    if (explicit !== undefined && explicit !== '') {
-      queryParams.push(parseInt(explicit));
-      const explicitIndex = queryParams.length;
-      queryText += ` AND explicit = $${explicitIndex}`;
-      countQueryText += ` AND explicit = $${explicitIndex}`;
-    }
+        // Explicit filter (0 for clean, 1 for explicit)
+        if (explicit !== undefined && explicit !== '') {
+            const rawExplicit = String(explicit).trim().toLowerCase();
+            let explicitVal;
+            if (rawExplicit === '0' || rawExplicit === 'false' || rawExplicit === 'clean') {
+                explicitVal = 0;
+            } else if (rawExplicit === '1' || rawExplicit === 'true' || rawExplicit === 'explicit') {
+                explicitVal = 1;
+            } else {
+                return res.status(400).json({
+                    status: 'fail',
+                    message: 'Explicit parameter must be 0, 1, true, false, clean, or explicit.'
+                });
+            }
+            queryParams.push(explicitVal);
+            const explicitIndex = queryParams.length;
+            queryText += ` AND explicit = $${explicitIndex}`;
+            countQueryText += ` AND explicit = $${explicitIndex}`;
+        }
 
      // Append standard sorting by popularity and pagination rules
     queryText += ` ORDER BY popularity DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;

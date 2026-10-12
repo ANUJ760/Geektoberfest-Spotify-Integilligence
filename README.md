@@ -94,19 +94,13 @@ These endpoints should return JSON. The tracks response should include rows; the
 
 If the health check works but tracks are empty, run the CSV importer and confirm its printed database name/host match the backend's database. If the frontend reports a request error, confirm the backend is running on port 5000 or set `VITE_API_URL` to the actual API base URL.
 
-### Running backend tests
+### Supported query parameters for `GET /api/tracks`
 
-Contributors can run the backend API test suite with one command from the repository root:
-
-```bash
-npm --prefix backend test
-```
-
-Or run `npm test` directly from inside the `backend/` directory:
-
-```bash
-cd backend && npm test
-```
+- `page` (integer, optional, default: `1`): 1-based page index. Must be a positive integer >= 1. Invalid values return `400 Bad Request`.
+- `limit` (integer, optional, default: `20`, max: `100`): Number of tracks to return. Must be a positive integer >= 1. Values exceeding 100 are capped to 100. Invalid values return `400 Bad Request`.
+- `search` (string, optional): Substring filter matched against track title and artists (case-insensitive).
+- `genre` (string, optional): Exact genre name to match.
+- `explicit` (string or integer, optional): Explicit content filter. Accepts `0`, `false`, `clean` for clean tracks, or `1`, `true`, `explicit` for explicit tracks. Other values return `400 Bad Request`.
 
 ## Production deployment
 
