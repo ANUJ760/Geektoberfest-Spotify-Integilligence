@@ -101,6 +101,26 @@ If the health check works but tracks are empty, run the CSV importer and confirm
 - `genre` (string, optional): Exact genre name to match.
 - `explicit` (string or integer, optional): Explicit content filter. Accepts `0`, `false`, `clean` for clean tracks, or `1`, `true`, `explicit` for explicit tracks. Other values return `400 Bad Request`.
 
+### Supported query parameters for `GET /api/genres`
+
+- `limit` (integer, optional, max: `50`): Maximum number of genres to return. Must be a positive integer >= 1. Values exceeding 50 are capped to 50. If omitted, returns all unique genres. Invalid values return `400 Bad Request`.
+
+### Supported query parameters for `GET /api/analytics/genres/distribution`
+
+- `genre` (string, required): Genre name to analyze. Must exist in the database. Missing or non-existent genre returns `400 Bad Request`. Valid genre with no tracks returns `200 OK` with zero counts and empty bins.
+- `metric` (string, required): Audio feature to bucket (`danceability`, `energy`, `valence`, `acousticness`, `speechiness`, `tempo`, `loudness`, `popularity`). Missing or invalid metric returns `400 Bad Request`.
+- `bins` (integer, optional, default: `10`, min: `2`, max: `20`): Number of distribution buckets. Values outside 2-20 or non-integer values return `400 Bad Request`.
+
+### Supported query parameters for `GET /api/analytics/genres/compare`
+
+- `genres` (string, required): Comma-separated list of 2 to 5 unique genres to compare. Requests with fewer than 2 unique genres, more than 5 genres, or non-existent genres return `400 Bad Request`.
+- `metrics` (string, optional, default: `danceability,energy,valence,acousticness,speechiness`): Comma-separated list of up to 5 whitelisted audio features. Requests with more than 5 metrics or invalid metric names return `400 Bad Request`.
+
+### Supported query parameters for `GET /api/analytics/genres`
+
+- `limit` (integer, optional, default: `10`, max: `50`): Number of top genres ranked by track count to return. Must be a positive integer >= 1. Values exceeding 50 are capped to 50. Invalid values return `400 Bad Request`.
+
+
 ## Production deployment
 
 ### Render backend and PostgreSQL
