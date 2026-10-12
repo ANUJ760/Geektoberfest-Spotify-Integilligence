@@ -1,5 +1,4 @@
 # Spotify Music Intelligence
-
 A full-stack music discovery and analytics app. The React frontend provides a Music Explorer and Analytics Dashboard. An Express API serves track and genre data from PostgreSQL, and a Python script imports the provided Spotify CSV.
 
 ## Project structure

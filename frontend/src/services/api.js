@@ -4,7 +4,7 @@ import axios from 'axios';
 const API = axios.create({
   // In production, the Vercel rewrite keeps API requests on the shared origin.
   // Locally, the frontend dev server talks directly to Express unless overridden.
-  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api'),
+  baseURL: import.meta.env?.VITE_API_URL || (import.meta.env?.PROD ? '/api' : 'http://localhost:5000/api'),
   headers: {
     'Content-Type': 'application/json',
   },
