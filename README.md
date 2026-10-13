@@ -24,8 +24,10 @@ Data_processing/  CSV cleaning and database import pipeline
 Start a local PostgreSQL server and create a database, for example:
 
 ```bash
-createdb spotify_intelligence
+createdb -E UTF8 spotify_intelligence
 ```
+
+Use `-E UTF8` (or `ENCODING 'UTF8'`). Some installs, including Windows setups, default to a single-byte encoding such as WIN1252, and the importer then fails on track names with non-Latin characters.
 
 If `createdb` is unavailable, create a database named `spotify_intelligence` using `psql` or your PostgreSQL GUI. You can also use a Render PostgreSQL database while developing locally; use its **external** connection URL because the internal URL is only reachable from Render services.
 

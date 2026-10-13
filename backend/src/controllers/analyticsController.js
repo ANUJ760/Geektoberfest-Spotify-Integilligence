@@ -430,11 +430,13 @@ const tempoQuery = `
 
     //fetch a clean limited sample of 300 tracks for the popularity vs Energy correlation scatter plot
     //loading all 89,000 nodes directly onto a chart will crash the browser tab.
+    //TABLESAMPLE BERNOULLI keeps ~1% of rows before the random sort, so only the small sample gets sorted.
+    //A page-level SYSTEM sample is avoided: tracks are stored in popularity order, so it clusters.
     const scatterQuery = `
-      SELECT track_name, artists, popularity, energy, danceability 
-      FROM tracks 
+      SELECT track_name, artists, popularity, energy, danceability
+      FROM tracks TABLESAMPLE BERNOULLI (1)
       WHERE popularity > 10
-      ORDER BY RANDOM() 
+      ORDER BY RANDOM()
       LIMIT 300;
     `;
 
