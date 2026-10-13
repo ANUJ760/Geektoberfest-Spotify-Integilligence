@@ -30,8 +30,28 @@ export const trackService = {
   },
   
   // Fetches a distinct list of all musical genres for dropdown menus
-  getGenres: async () => {
-    const response = await API.get('/genres');
+  getGenres: async (limit) => {
+    const params = limit ? { limit } : undefined;
+    const response = await API.get('/genres', { params });
+    return response.data;
+  },
+
+  // Fetches bucketed feature distribution for a single genre
+  getGenreDistribution: async (genre, metric, bins = 10) => {
+    const response = await API.get('/analytics/genres/distribution', {
+      params: { genre, metric, bins },
+    });
+    return response.data;
+  },
+
+  // Fetches comparative audio metrics and track counts for multiple genres
+  compareGenres: async (genres, metrics) => {
+    const genresParam = Array.isArray(genres) ? genres.join(',') : genres;
+    const params = { genres: genresParam };
+    if (metrics) {
+      params.metrics = Array.isArray(metrics) ? metrics.join(',') : metrics;
+    }
+    const response = await API.get('/analytics/genres/compare', { params });
     return response.data;
   },
 };

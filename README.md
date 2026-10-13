@@ -57,9 +57,12 @@ python -m pip install -r Data_processing/requirements.txt
 python Data_processing/clean_data.py
 ```
 
-The importer reads `DATABASE_URL` from the current environment, the repository-root `.env`, or `backend/.env`. It creates the `tracks` and `genre_analytics` tables if needed, then replaces their rows with the CSV data in one transaction. It prints the number of rows prepared and the database host/name it targets. Do not commit or paste the connection URL into issues.
+The importer reads `DATABASE_URL` from the current environment, the repository-root `.env`, or `backend/.env`. It creates the `tracks` and `genre_analytics` tables if needed, then safely upserts rows into `tracks` and refreshes `genre_analytics` in a single atomic transaction. It prints the number of rows prepared and the database host/name it targets. Do not commit or paste the connection URL into issues.
 
-The importer must be run separately; starting the backend creates the schema but does not import the CSV. Running the importer again replaces the existing table rows.
+**Safe reruns and failure recovery:**
+- The import runs inside an atomic transaction using an isolated temporary staging table. If an import fails or is interrupted at any point, PostgreSQL automatically rolls back all changes, ensuring `tracks` and `genre_analytics` remain completely consistent with zero data loss or partial writes.
+- Rerunning the importer (`python Data_processing/clean_data.py`) is safe and idempotent: it updates existing tracks by `track_id` and adds new records without dropping tables or wiping data.
+- To recover from an interrupted run, simply re-run `python Data_processing/clean_data.py`. If a full table replacement is explicitly desired, use `python Data_processing/clean_data.py --replace`.
 
 ### 4. Start the backend
 
@@ -103,25 +106,25 @@ If the health check works but tracks are empty, run the CSV importer and confirm
 - `genre` (string, optional): Exact genre name to match.
 - `explicit` (string or integer, optional): Explicit content filter. Accepts `0`, `false`, `clean` for clean tracks, or `1`, `true`, `explicit` for explicit tracks. Other values return `400 Bad Request`.
 
-## Dashboard analytics performance
+### Supported query parameters for `GET /api/genres`
 
-`GET /api/analytics/dashboard` returns three datasets. The scatter sample used `ORDER BY RANDOM()` over the whole `tracks` table, which assigned a random key to every row and sorted them all on each request. It now uses `TABLESAMPLE BERNOULLI (1)`, so PostgreSQL keeps about 1% of rows before the random sort and only sorts that sample. The response shape and the 300-row limit are unchanged.
+- `limit` (integer, optional, max: `50`): Maximum number of genres to return. Must be a positive integer >= 1. Values exceeding 50 are capped to 50. If omitted, returns all unique genres. Invalid values return `400 Bad Request`.
 
-Measured with `EXPLAIN ANALYZE` on the provided 89,740-track dataset, PostgreSQL 18, local machine, median of 15 runs:
+### Supported query parameters for `GET /api/analytics/genres/distribution`
 
-| Query | Before | After |
-| --- | --- | --- |
-| Scatter sample (300 tracks) | ~26 ms, sequential scan plus sort of all matching rows | ~5 ms, sample scan plus top-N sort of ~750 rows |
-| Tempo distribution | ~36 ms, sequential scan and aggregate | Unchanged. Every row must be read to count bins, so no index helps here. |
-| Top genres | < 1 ms, `genre_analytics` has 114 rows | Unchanged |
+- `genre` (string, required): Genre name to analyze. Must exist in the database. Missing or non-existent genre returns `400 Bad Request`. Valid genre with no tracks returns `200 OK` with zero counts and empty bins.
+- `metric` (string, required): Audio feature to bucket (`danceability`, `energy`, `valence`, `acousticness`, `speechiness`, `tempo`, `loudness`, `popularity`). Missing or invalid metric returns `400 Bad Request`.
+- `bins` (integer, optional, default: `10`, min: `2`, max: `20`): Number of distribution buckets. Values outside 2-20 or non-integer values return `400 Bad Request`.
 
-Tradeoffs:
+### Supported query parameters for `GET /api/analytics/genres/compare`
 
-- Each request returns a different random sample, as before, so the scatter plot changes on refresh.
-- A 1% sample of a small table can return fewer than 300 rows. The provided dataset returns 300 every time.
-- `TABLESAMPLE SYSTEM` was rejected. It samples whole disk pages, and `tracks` is stored in popularity order, so it returned popularity values from a narrow range (41–62 in testing) instead of a spread.
+- `genres` (string, required): Comma-separated list of 2 to 5 unique genres to compare. Requests with fewer than 2 unique genres, more than 5 genres, or non-existent genres return `400 Bad Request`.
+- `metrics` (string, optional, default: `danceability,energy,valence,acousticness,speechiness`): Comma-separated list of up to 5 whitelisted audio features. Requests with more than 5 metrics or invalid metric names return `400 Bad Request`.
 
-To re-check the plan, run `EXPLAIN (ANALYZE, BUFFERS) SELECT ... FROM tracks TABLESAMPLE BERNOULLI (1) WHERE popularity > 10 ORDER BY RANDOM() LIMIT 300;` in `psql`.
+### Supported query parameters for `GET /api/analytics/genres`
+
+- `limit` (integer, optional, default: `10`, max: `50`): Number of top genres ranked by track count to return. Must be a positive integer >= 1. Values exceeding 50 are capped to 50. Invalid values return `400 Bad Request`.
+
 
 ## Production deployment
 

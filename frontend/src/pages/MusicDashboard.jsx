@@ -16,6 +16,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { trackService } from '../services/api';
+import GenreAnalytics from '../components/GenreAnalytics';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -928,6 +929,9 @@ export default function MusicDashboard() {
             </div>
           </div>
         </section>
+
+        {/* Feature 4: Genre Analytics */}
+        <GenreAnalytics genreOptions={genreOptions} />
       </div>
     </div>
   );
