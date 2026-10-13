@@ -24,8 +24,10 @@ Data_processing/  CSV cleaning and database import pipeline
 Start a local PostgreSQL server and create a database, for example:
 
 ```bash
-createdb spotify_intelligence
+createdb -E UTF8 spotify_intelligence
 ```
+
+Use `-E UTF8` (or `ENCODING 'UTF8'`). Some installs, including Windows setups, default to a single-byte encoding such as WIN1252, and the importer then fails on track names with non-Latin characters.
 
 If `createdb` is unavailable, create a database named `spotify_intelligence` using `psql` or your PostgreSQL GUI. You can also use a Render PostgreSQL database while developing locally; use its **external** connection URL because the internal URL is only reachable from Render services.
 
@@ -100,6 +102,26 @@ If the health check works but tracks are empty, run the CSV importer and confirm
 - `search` (string, optional): Substring filter matched against track title and artists (case-insensitive).
 - `genre` (string, optional): Exact genre name to match.
 - `explicit` (string or integer, optional): Explicit content filter. Accepts `0`, `false`, `clean` for clean tracks, or `1`, `true`, `explicit` for explicit tracks. Other values return `400 Bad Request`.
+
+## Dashboard analytics performance
+
+`GET /api/analytics/dashboard` returns three datasets. The scatter sample used `ORDER BY RANDOM()` over the whole `tracks` table, which assigned a random key to every row and sorted them all on each request. It now uses `TABLESAMPLE BERNOULLI (1)`, so PostgreSQL keeps about 1% of rows before the random sort and only sorts that sample. The response shape and the 300-row limit are unchanged.
+
+Measured with `EXPLAIN ANALYZE` on the provided 89,740-track dataset, PostgreSQL 18, local machine, median of 15 runs:
+
+| Query | Before | After |
+| --- | --- | --- |
+| Scatter sample (300 tracks) | ~26 ms, sequential scan plus sort of all matching rows | ~5 ms, sample scan plus top-N sort of ~750 rows |
+| Tempo distribution | ~36 ms, sequential scan and aggregate | Unchanged. Every row must be read to count bins, so no index helps here. |
+| Top genres | < 1 ms, `genre_analytics` has 114 rows | Unchanged |
+
+Tradeoffs:
+
+- Each request returns a different random sample, as before, so the scatter plot changes on refresh.
+- A 1% sample of a small table can return fewer than 300 rows. The provided dataset returns 300 every time.
+- `TABLESAMPLE SYSTEM` was rejected. It samples whole disk pages, and `tracks` is stored in popularity order, so it returned popularity values from a narrow range (41–62 in testing) instead of a spread.
+
+To re-check the plan, run `EXPLAIN (ANALYZE, BUFFERS) SELECT ... FROM tracks TABLESAMPLE BERNOULLI (1) WHERE popularity > 10 ORDER BY RANDOM() LIMIT 300;` in `psql`.
 
 ## Production deployment
 
