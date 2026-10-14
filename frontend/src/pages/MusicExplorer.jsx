@@ -553,11 +553,6 @@ export default function MusicExplorer() {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeId, setActiveId] = useState(null);
 
-  const [details, setDetails] = useState(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [detailsError, setDetailsError] = useState(null);
-  const [detailsRetryKey, setDetailsRetryKey] = useState(0);
-
   /* Genres: load once on mount */
   useEffect(() => {
     let cancelled = false;
@@ -617,6 +612,11 @@ export default function MusicExplorer() {
   const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
   const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
   const activeNumber = (page - 1) * PAGE_SIZE + activeIndex + 1;
+
+  const [details, setDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
+  const [detailsRetryKey, setDetailsRetryKey] = useState(0);
 
   /* Fetch detailed metadata, album, popularity and audio features for the selected track */
   useEffect(() => {
