@@ -551,6 +551,7 @@ export default function MusicExplorer() {
   const [search, setSearch] = useState('');
   const [genre, setGenre] = useState('');
   const [sortBy, setSortBy] = useState('popularity');
+  const [explicit, setExplicit] = useState('all');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -598,6 +599,8 @@ export default function MusicExplorer() {
           search: search.trim(),
           genre,
           sortBy,
+          // 'all' sends no filter; 'explicit' and 'clean' map to the backend's accepted values
+          explicit: explicit === 'all' ? '' : explicit,
         });
         if (cancelled) return;
 
@@ -620,7 +623,7 @@ export default function MusicExplorer() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [page, search, genre, sortBy, reloadKey]);
+  }, [page, search, genre, sortBy, explicit, reloadKey]);
 
   const activeTrack = tracks.find((t) => t.id === activeId) ?? tracks[0] ?? null;
   const activeIndex = activeTrack ? tracks.indexOf(activeTrack) : -1;
@@ -687,6 +690,11 @@ export default function MusicExplorer() {
 
   const handleSort = (value) => {
     setSortBy(value);
+    setPage(1);
+  };
+
+  const handleExplicit = (value) => {
+    setExplicit(value);
     setPage(1);
   };
 
@@ -773,6 +781,21 @@ export default function MusicExplorer() {
                 <option value="popularity">Popularity</option>
                 <option value="name">Name (A–Z)</option>
                 <option value="duration">Duration</option>
+              </select>
+            </div>
+
+            <div style={S.field}>
+              <label htmlFor="mx-explicit" style={label}>Content</label>
+              <select
+                id="mx-explicit"
+                className="mx-focus"
+                value={explicit}
+                onChange={(e) => handleExplicit(e.target.value)}
+                style={S.select}
+              >
+                <option value="all">All</option>
+                <option value="explicit">Explicit</option>
+                <option value="clean">Clean</option>
               </select>
             </div>
           </div>
