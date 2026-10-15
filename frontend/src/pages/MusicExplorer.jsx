@@ -540,6 +540,10 @@ const ellipsis = {
 
 export default function MusicExplorer() {
   const [genres, setGenres] = useState([]);
+  const [genresLoading, setGenresLoading] = useState(true);
+  const [genresError, setGenresError] = useState(null);
+  const [genresReloadKey, setGenresReloadKey] = useState(0);
+
   const [tracks, setTracks] = useState([]);
   const [total, setTotal] = useState(null);
   const [totalPages, setTotalPages] = useState(null);
@@ -553,23 +557,32 @@ export default function MusicExplorer() {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeId, setActiveId] = useState(null);
 
-  /* Genres: load once on mount */
+  /* Genres: load on mount and upon retry */
   useEffect(() => {
     let cancelled = false;
+    setGenresLoading(true);
+    setGenresError(null);
 
     (async () => {
       try {
         const res = await trackService.getGenres();
-        if (!cancelled) setGenres(parseGenresResponse(res));
+        if (!cancelled) {
+          setGenres(parseGenresResponse(res));
+          setGenresLoading(false);
+        }
       } catch (err) {
-        if (!cancelled) setGenres([]);
+        if (!cancelled) {
+          setGenres([]);
+          setGenresError(err?.message || 'Failed to load genres');
+          setGenresLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [genresReloadKey]);
 
   /* Tracks: refetch on filter change, debounced by 300ms */
   useEffect(() => {
@@ -593,7 +606,7 @@ export default function MusicExplorer() {
         setTotal(parsed.total);
         setTotalPages(parsed.totalPages);
       } catch (err) {
-        if (!cancelled) return;
+        if (cancelled) return;
         setTracks([]);
         setTotal(null);
         setTotalPages(null);
@@ -729,11 +742,22 @@ export default function MusicExplorer() {
                 value={genre}
                 onChange={(e) => handleGenre(e.target.value)}
                 style={S.select}
+                disabled={genresLoading}
               >
-                <option value="">All genres</option>
-                {genres.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
+                {genresLoading ? (
+                  <option value="">Loading genres...</option>
+                ) : genresError ? (
+                  <option value="">Genres unavailable</option>
+                ) : genres.length === 0 ? (
+                  <option value="">No genres available</option>
+                ) : (
+                  <>
+                    <option value="">All genres</option>
+                    {genres.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
 
@@ -752,9 +776,50 @@ export default function MusicExplorer() {
               </select>
             </div>
           </div>
+          {genresError && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: C.red }}>
+              <span>Could not load genres ({truncate(genresError, 40)})</span>
+              <button
+                type="button"
+                className="mx-btn mx-focus"
+                style={{
+                  padding: '2px 8px',
+                  fontSize: 12,
+                  background: 'none',
+                  border: `1px solid ${C.red}`,
+                  color: C.red,
+                  cursor: 'pointer',
+                  borderRadius: 2,
+                }}
+                onClick={() => setGenresReloadKey((k) => k + 1)}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
 
-        {genres.length > 0 && (
+        {genresLoading ? (
+          <div style={S.chips} className="mx-hide-sm">
+            <span style={{ fontSize: 13, color: C.soft }}>Loading genres...</span>
+          </div>
+        ) : genresError ? (
+          <div style={S.chips} className="mx-hide-sm">
+            <span style={{ fontSize: 13, color: C.red }}>Failed to load genres</span>
+            <button
+              type="button"
+              className="mx-chip mx-focus"
+              style={{ ...chipStyle(false), borderColor: C.red, color: C.red }}
+              onClick={() => setGenresReloadKey((k) => k + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        ) : genres.length === 0 ? (
+          <div style={S.chips} className="mx-hide-sm">
+            <span style={{ fontSize: 13, color: C.soft }}>No genres available in database</span>
+          </div>
+        ) : (
           <div style={S.chips} className="mx-hide-sm">
             <button
               type="button"
@@ -948,10 +1013,28 @@ export default function MusicExplorer() {
           ) : tracks.length === 0 ? (
             <div style={S.statusBox}>
               <p style={{ margin: 0, color: C.ink }}>
-                {loading
-                  ? 'Loading tracks'
-                  : 'No tracks match. Clear the search or choose another genre.'}
+                {loading ? (
+                  'Loading tracks...'
+                ) : search || genre ? (
+                  'No tracks match your current filter.'
+                ) : (
+                  'No tracks found in the database. Run the CSV importer to populate data.'
+                )}
               </p>
+              {!loading && (search || genre) && (
+                <button
+                  type="button"
+                  className="mx-btn mx-focus"
+                  style={S.button}
+                  onClick={() => {
+                    setSearch('');
+                    setGenre('');
+                    setPage(1);
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             <ol style={{ ...S.list, opacity: loading ? 0.55 : 1 }}>
@@ -1077,7 +1160,35 @@ export default function MusicExplorer() {
           <span style={dot(C.red)} />
           {PAGE_SIZE} per page
         </span>
-        <span>{genres.length > 0 ? `${genres.length} genres indexed` : 'Genres unavailable'}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {genresLoading ? (
+            <span>Loading genres...</span>
+          ) : genresError ? (
+            <>
+              <span style={{ color: C.red }}>Failed to load genres ({truncate(genresError, 40)})</span>
+              <button
+                type="button"
+                className="mx-btn mx-focus"
+                style={{
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  background: 'none',
+                  border: `1px solid ${C.red}`,
+                  color: C.red,
+                  cursor: 'pointer',
+                  borderRadius: 2,
+                }}
+                onClick={() => setGenresReloadKey((k) => k + 1)}
+              >
+                Retry
+              </button>
+            </>
+          ) : genres.length === 0 ? (
+            <span>0 genres indexed (empty database)</span>
+          ) : (
+            <span>{genres.length} genres indexed</span>
+          )}
+        </span>
       </footer>
     </div>
   );
