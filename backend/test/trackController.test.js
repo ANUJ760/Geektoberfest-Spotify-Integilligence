@@ -208,7 +208,7 @@ describe('GET /api/tracks - Sorting, Pagination & Validation', () => {
 
   test('9. Sorting combined with genre and explicit filters', async () => {
     // Filter rock tracks sorted by popularity DESC
-    const rockRes = await fetch(`${baseUrl}?genre=rock&sortBy=popularity`);
+    const rockRes = await fetch(`${baseUrl}?search=Test%20Artist&genre=rock&sortBy=popularity`);
     assert.equal(rockRes.status, 200);
     const rockBody = await rockRes.json();
     const rockIds = rockBody.data.map((t) => t.track_id);
